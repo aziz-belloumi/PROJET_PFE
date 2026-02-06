@@ -1,0 +1,27 @@
+# Virtual environment
+.venv/
+
+# IDE
+.idea/
+.vscode/
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Environment variables
+.env
+
+# Large data files (Keep folder structure)
+data/*
+!data/.gitkeep
+
+# Experiments output (Keep folder structure)
+experiments/*
+!experiments/.gitkeep
+
+# Logs
+*.log
+
+# Windows specific
+Thumbs.db
