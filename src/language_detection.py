@@ -59,6 +59,18 @@ class FastTextLanguageDetector:
         score = float(scores[0]) if len(scores) > 0 else 0.0
         lang = self._normalize_label(raw_label)
 
+        # POST-PROCESSING: Sanity check using Arabic Ratio
+        if lang == "ar" and self.preprocessor is not None:
+             # FastText can sometimes be overconfident on mixed text.
+             # Enforce that the text actually contains a significant amount of Arabic.
+             ratio = self.preprocessor.arabic_ratio(text)
+             # If less than 40% is Arabic letters, reject it even if FastText says "ar"
+             if ratio < 0.4:  
+                 self.logger.warning(f"FastText detected 'ar' but arabic_ratio={ratio:.2f} < 0.4. Forcing 'unk'.")
+                 lang = "unk"
+                 score = 0.0  # Reset score
+                 raw_label = "__label__unk"
+
         return LanguageDetection(lang=lang, score=score, raw_label=raw_label)
 
     def is_arabic(self, text: str, threshold: float = 0.60) -> Tuple[bool, LanguageDetection]:

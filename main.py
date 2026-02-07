@@ -1,7 +1,7 @@
 from datetime import datetime
 from pathlib import Path
 import logging
-import json
+import json  # (kept as-is; can be removed later if unused)
 import pandas as pd
 
 from src.config import Config
@@ -39,12 +39,12 @@ def main():
     db = DatabaseConnection(logger=logger)
     engine = db.get_engine()  # if not available: engine = db.engine
 
-    sample_size = 200
+    sample_size = 5
     raw_table = getattr(Config, "RAW_TABLE", "article")
 
     # 1) Fetch directly from raw table (NO title)
     query = f"""
-        SELECT id, body,id_language
+        SELECT id, body, id_language
         FROM {raw_table}
         WHERE body IS NOT NULL
           AND LENGTH(body) > 50
@@ -72,7 +72,7 @@ def main():
     df["text_raw"] = df["body"].fillna("")
     df["text_langdetect"] = df["text_raw"].apply(preproc.preprocess_for_lang_detect)
 
-    pre_csv = run_dir / "sample_langdetect_preprocessed.csv"
+    pre_csv = run_dir / "sample_lang_detect_preprocessed.csv"
     df[["id", "id_language", "expected_lang", "text_langdetect"]].to_csv(
         pre_csv, index=False, encoding="utf-8-sig"
     )
@@ -94,9 +94,9 @@ def main():
 
         out.append({
             "article_id": int(r.id),
-            "lang": res.lang,              # predicted
+            "lang": res.lang,
             "score": res.score,
-            "expected_lang": expected,     # from id_language mapping
+            "expected_lang": expected,
             "is_correct": is_correct
         })
 
@@ -110,8 +110,13 @@ def main():
     lang_df.to_csv(lang_csv, index=False, encoding="utf-8-sig")
     logger.info(f"Saved language detection CSV: {lang_csv}")
 
+    # =========================
+    # NER (AraBERT vs CAMeL)
+    # Outputs:
+    # - sample_ner_preprocessed.csv (article_id + text_ner)
+    # - ner_entities.csv (1 row per entity, id_model=0 arabert, id_model=1 camel)
+    # =========================
 
-    # NER (AraBERT vs CAMeL) - 1 row per article (JSON columns)
     camel_ner_model = getattr(Config, "CAMEL_NER_MODEL", None)
     if not camel_ner_model:
         raise AttributeError("Missing Config.CAMEL_NER_MODEL (e.g., CAMeL-Lab/bert-base-arabic-camelbert-msa-ner)")
@@ -130,7 +135,7 @@ def main():
     arabic_df["text_ner"] = arabic_df["text_raw"].apply(preproc.preprocess_for_ner)
 
     ner_pre_csv = run_dir / "sample_ner_preprocessed.csv"
-    arabic_df[["id", "id_language", "expected_lang", "text_ner"]].to_csv(
+    arabic_df[["id","text_ner"]].to_csv(
         ner_pre_csv, index=False, encoding="utf-8-sig"
     )
     logger.info(f"Saved NER preprocessed CSV: {ner_pre_csv}")
@@ -139,45 +144,53 @@ def main():
     ner_arabert = TransformersNER(model_name=Config.ARABERT_NER_MODEL, logger=logger, preprocessor=None)
     ner_camel = TransformersNER(model_name=camel_ner_model, logger=logger, preprocessor=None)
 
-    ner_rows = []
+    # NEW: long-format entity table (no article text here)
+    entity_rows = []
+
     for r in arabic_df.itertuples(index=False):
         text = r.text_ner
+        article_id = int(r.id)
 
         try:
             ents_a = ner_arabert.predict(text)
         except Exception as e:
-            logger.error(f"AraBERT NER failed for article {r.id}: {e}")
+            logger.error(f"AraBERT NER failed for article {article_id}: {e}")
             ents_a = []
 
         try:
             ents_c = ner_camel.predict(text)
         except Exception as e:
-            logger.error(f"CAMeL NER failed for article {r.id}: {e}")
+            logger.error(f"CAMeL NER failed for article {article_id}: {e}")
             ents_c = []
 
-        ents_a_list = [e.__dict__ for e in ents_a]
-        ents_c_list = [e.__dict__ for e in ents_c]
+        # id_model: 0=arabert, 1=camel
+        for e in ents_a:
+            entity_rows.append({
+                "article_id": article_id,
+                "id_model": 0,
+                "text": e.text,
+                "label": e.label,
+                "start": e.start,
+                "end": e.end,
+                "score": e.score,
+            })
 
-        ner_rows.append({
-            "article_id": int(r.id),
-            "text_ner": text,
+        for e in ents_c:
+            entity_rows.append({
+                "article_id": article_id,
+                "id_model": 1,
+                "text": e.text,
+                "label": e.label,
+                "start": e.start,
+                "end": e.end,
+                "score": e.score,
+            })
 
-            "arabert_model": "ARABERT_NER_MODEL",
-            "camel_model": "CAMEL_NER_MODEL",
+        logger.info(f"[NER {article_id}] arabert={len(ents_a)} camel={len(ents_c)}")
 
-            "arabert_count": len(ents_a_list),
-            "camel_count": len(ents_c_list),
-
-            # JSON in same row (alternative design)
-            "arabert_entities_json": json.dumps(ents_a_list, ensure_ascii=False),
-            "camel_entities_json": json.dumps(ents_c_list, ensure_ascii=False),
-        })
-
-        logger.info(f"[NER {r.id}] arabert={len(ents_a_list)} camel={len(ents_c_list)}")
-
-    ner_csv = run_dir / "ner_comparison.csv"
-    pd.DataFrame(ner_rows).to_csv(ner_csv, index=False, encoding="utf-8-sig")
-    logger.info(f"Saved NER comparison CSV: {ner_csv}")
+    ner_entities_csv = run_dir / "ner_entities.csv"
+    pd.DataFrame(entity_rows).to_csv(ner_entities_csv, index=False, encoding="utf-8-sig")
+    logger.info(f"Saved NER entities CSV: {ner_entities_csv}")
 
     # =========================
 
