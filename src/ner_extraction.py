@@ -10,6 +10,35 @@ import torch
 from transformers import AutoTokenizer, AutoModelForTokenClassification, pipeline
 
 
+# ============================================================
+# Recommended mBERT NER baseline (token-classification checkpoint)
+# ============================================================
+MBERT_NER_MODEL: str = "Davlan/bert-base-multilingual-cased-ner-hrl"
+
+# Optional: model id registry convention for your project
+# (you still set the actual model names in main/config)
+DEFAULT_MODEL_REGISTRY: Dict[int, str] = {
+    0: "arabert",
+    1: "camel",
+    2: "mbert",
+}
+
+# ============================================================
+# Module-owned defaults (so main.py can import + log them)
+# ============================================================
+DEFAULT_NER_PARAMS: Dict[str, Any] = {
+    "max_chunk_tokens": 450,
+    "overlap_tokens": 80,
+    "score_threshold": 0.60,
+    "merge_entities": True,
+    "deduplicate": True,
+    "min_len_person": 2,
+    "min_len_other": 3,
+    "expand_short_entities": True,
+    "expand_max_len": 5,
+}
+
+
 @dataclass
 class NEREntity:
     text: str
@@ -21,11 +50,11 @@ class NEREntity:
 
 class TransformersNER:
     """
-    Robust NER extractor (AraBERT / CAMeL) with:
+    Robust NER extractor (AraBERT / CAMeL / mBERT-NER) with:
     - token-based chunking (offset_mapping) to avoid 512-token crash
     - score filtering
     - short/noise filtering
-    - word-boundary expansion for short entities to reduce fragments (e.g., "لب" -> "لبده")
+    - word-boundary expansion for short entities to reduce fragments
     - merge adjacent entities (safe punctuation gaps) WITHOUT merging overlaps/duplicates
     - deduplication because of overlap (done BEFORE merge to avoid duplicated texts)
     """
@@ -39,26 +68,26 @@ class TransformersNER:
         logger: Optional[logging.Logger] = None,
         preprocessor=None,  # expects preprocess_for_ner(text) -> str
         device: Optional[int] = None,
-        max_chunk_tokens: int = 450,
-        overlap_tokens: int = 80,
-        score_threshold: float = 0.60,
-        merge_entities: bool = True,
-        deduplicate: bool = True,
-        min_len_person: int = 2,
-        min_len_other: int = 3,
-        expand_short_entities: bool = True,
-        expand_max_len: int = 5,
+        max_chunk_tokens: int = DEFAULT_NER_PARAMS["max_chunk_tokens"],
+        overlap_tokens: int = DEFAULT_NER_PARAMS["overlap_tokens"],
+        score_threshold: float = DEFAULT_NER_PARAMS["score_threshold"],
+        merge_entities: bool = DEFAULT_NER_PARAMS["merge_entities"],
+        deduplicate: bool = DEFAULT_NER_PARAMS["deduplicate"],
+        min_len_person: int = DEFAULT_NER_PARAMS["min_len_person"],
+        min_len_other: int = DEFAULT_NER_PARAMS["min_len_other"],
+        expand_short_entities: bool = DEFAULT_NER_PARAMS["expand_short_entities"],
+        expand_max_len: int = DEFAULT_NER_PARAMS["expand_max_len"],
     ):
         self.logger = logger or logging.getLogger(__name__)
         self.model_name = model_name
         self.preprocessor = preprocessor
 
-        self.max_chunk_tokens = max_chunk_tokens
-        self.overlap_tokens = overlap_tokens
+        self.max_chunk_tokens = int(max_chunk_tokens)
+        self.overlap_tokens = int(overlap_tokens)
         self.score_threshold = float(score_threshold)
 
-        self.merge_entities = merge_entities
-        self.deduplicate = deduplicate
+        self.merge_entities = bool(merge_entities)
+        self.deduplicate = bool(deduplicate)
 
         self.min_len_person = int(min_len_person)
         self.min_len_other = int(min_len_other)
@@ -82,7 +111,13 @@ class TransformersNER:
         )
 
         model_max = getattr(self.tokenizer, "model_max_length", 512) or 512
-        self._safe_max_tokens = max(16, min(int(model_max) - 2, int(self.max_chunk_tokens)))
+        self._safe_max_tokens = max(16, min(int(model_max) - 2, self.max_chunk_tokens))
+
+        if self.overlap_tokens >= self._safe_max_tokens:
+            self.logger.warning(
+                f"overlap_tokens ({self.overlap_tokens}) >= safe_max_tokens ({self._safe_max_tokens}). "
+                f"This may reduce chunk progress."
+            )
 
         self.logger.info(
             f"NER model loaded: {model_name} | device={self.device} | "
@@ -90,9 +125,6 @@ class TransformersNER:
             f"score_threshold={self.score_threshold}"
         )
 
-    # ----------------------------
-    # Helpers
-    # ----------------------------
     @staticmethod
     def _normalize_label(label: str) -> str:
         return (label or "UNK").upper()
@@ -126,9 +158,6 @@ class TransformersNER:
                 return False
         return True
 
-    # ----------------------------
-    # Token-based chunking
-    # ----------------------------
     def _token_chunks(self, text: str) -> List[Dict[str, Any]]:
         enc = self.tokenizer(
             text,
@@ -165,9 +194,6 @@ class TransformersNER:
 
         return chunks
 
-    # ----------------------------
-    # Expand short entities to word boundaries
-    # ----------------------------
     def _expand_to_word_boundaries(self, base_text: str, start: int, end: int) -> Tuple[int, int, str]:
         n = len(base_text)
         if not (0 <= start < end <= n):
@@ -192,17 +218,7 @@ class TransformersNER:
 
         return s, e, expanded
 
-    # ----------------------------
-    # Merge / dedup
-    # ----------------------------
     def _merge_adjacent(self, entities: List[NEREntity], base_text: str) -> List[NEREntity]:
-        """
-        Merge ONLY if:
-        - same label
-        - no overlap (ent.start >= last.end)
-        - gap is mergeable (whitespace/punct only)
-        For overlaps/duplicates: keep the better entity (higher score or longer span).
-        """
         if not entities:
             return []
 
@@ -212,15 +228,15 @@ class TransformersNER:
         for ent in entities[1:]:
             last = merged[-1]
 
-            # Overlap or duplicate span -> do not concatenate texts
             if ent.start < last.end:
                 better = ent
-                if (last.score > ent.score) or (last.score == ent.score and (last.end - last.start) >= (ent.end - ent.start)):
+                if (last.score > ent.score) or (
+                    last.score == ent.score and (last.end - last.start) >= (ent.end - ent.start)
+                ):
                     better = last
                 merged[-1] = better
                 continue
 
-            # Different label -> no merge
             if ent.label != last.label:
                 merged.append(ent)
                 continue
@@ -243,9 +259,6 @@ class TransformersNER:
 
     @staticmethod
     def _deduplicate(entities: List[NEREntity]) -> List[NEREntity]:
-        """
-        Deduplicate by (start,end,label) keeping highest score.
-        """
         best: Dict[Tuple[int, int, str], NEREntity] = {}
         for e in entities:
             key = (e.start, e.end, e.label)
@@ -253,9 +266,6 @@ class TransformersNER:
                 best[key] = e
         return list(best.values())
 
-    # ----------------------------
-    # Public API
-    # ----------------------------
     def predict(self, text: str) -> List[NEREntity]:
         if not text or not isinstance(text, str):
             return []
@@ -297,7 +307,6 @@ class TransformersNER:
 
                 ent_text = self._strip_weird(text[start:end])
 
-                # Expand short entities to full word (fix fragments like "لب")
                 if self.expand_short_entities and len(ent_text) <= self.expand_max_len:
                     new_s, new_e, expanded = self._expand_to_word_boundaries(text, start, end)
                     expanded = self._strip_weird(expanded)
@@ -320,12 +329,10 @@ class TransformersNER:
                     )
                 )
 
-        # IMPORTANT: deduplicate FIRST (prevents "لبدهلبده"), then merge true adjacency
         if self.deduplicate:
             entities = self._deduplicate(entities)
 
         if self.merge_entities:
             entities = self._merge_adjacent(entities, base_text=text)
 
-        entities = sorted(entities, key=lambda e: (e.start, e.end, e.label))
-        return entities
+        return sorted(entities, key=lambda e: (e.start, e.end, e.label))
