@@ -1,31 +1,18 @@
-# src/ner_extraction.py
-
 from __future__ import annotations
-
 from dataclasses import dataclass
 from typing import List, Dict, Optional, Any, Tuple
 import logging
-
 import torch
 from transformers import AutoTokenizer, AutoModelForTokenClassification, pipeline
 
 
-# ============================================================
-# Recommended mBERT NER baseline (token-classification checkpoint)
-# ============================================================
-MBERT_NER_MODEL: str = "Davlan/bert-base-multilingual-cased-ner-hrl"
-
-# Optional: model id registry convention for your project
-# (you still set the actual model names in main/config)
 DEFAULT_MODEL_REGISTRY: Dict[int, str] = {
     0: "arabert",
     1: "camel",
     2: "mbert",
 }
 
-# ============================================================
-# Module-owned defaults (so main.py can import + log them)
-# ============================================================
+
 DEFAULT_NER_PARAMS: Dict[str, Any] = {
     "max_chunk_tokens": 450,
     "overlap_tokens": 80,
@@ -35,7 +22,7 @@ DEFAULT_NER_PARAMS: Dict[str, Any] = {
     "min_len_person": 2,
     "min_len_other": 3,
     "expand_short_entities": True,
-    "expand_max_len": 5,
+    "expand_max_len": 3,
 }
 
 
@@ -106,7 +93,7 @@ class TransformersNER:
             task="token-classification",
             model=self.model,
             tokenizer=self.tokenizer,
-            aggregation_strategy="simple",
+            aggregation_strategy="max",
             device=self.device,
         )
 

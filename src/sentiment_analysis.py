@@ -10,17 +10,8 @@ import torch
 from transformers import AutoTokenizer, AutoModelForSequenceClassification, pipeline
 
 
-# ============================================================
-# Recommended models
-# ============================================================
-CAMEL_SENTIMENT_MODEL = "CAMeL-Lab/bert-base-arabic-camelbert-msa-sentiment"
-ARABERT_SENTIMENT_MODEL = "PRAli22/AraBert-Arabic-Sentiment-Analysis"  # labels: Positive/Negative/Neutral/Mixed
-MBERT_SENTIMENT_MODEL = "nlptown/bert-base-multilingual-uncased-sentiment"
 
 
-# ============================================================
-# Module-owned defaults (so main.py can import + log them)
-# ============================================================
 DEFAULT_SENTIMENT_PARAMS: Dict[str, Any] = {
     "max_chunk_tokens": 450,
     "overlap_tokens": 50,

@@ -14,23 +14,19 @@ from src.preprocessing import (
     ArabicPreprocessor,
     PREPROCESS_LANG_DETECT_PARAMS,
     PREPROCESS_NER_PARAMS,
-    PREPROCESS_KEYWORDS_PARAMS,
+    PREPROCESS_SENTIMENT_PARAMS,
 )
 from src.language_detection import FastTextLanguageDetector
 from src.ner_extraction import (
     TransformersNER,
     DEFAULT_NER_PARAMS,
-    MBERT_NER_MODEL,
 )
 from src.sentiment_analysis import (
     TransformersSentiment,
     DEFAULT_SENTIMENT_PARAMS,
-    ARABERT_SENTIMENT_MODEL,
-    CAMEL_SENTIMENT_MODEL,
-    MBERT_SENTIMENT_MODEL,
     normalize_3class_label,
     normalize_nlptown_stars,
-    normalize_arabert_prali4,  # <-- IMPORTANT UPDATE
+    normalize_arabert_prali4,
 )
 
 
@@ -76,18 +72,8 @@ def main():
     # NER parameters (start from module defaults, override as needed)
     NER_PARAMS = dict(DEFAULT_NER_PARAMS)
 
-    camel_ner_model = getattr(Config, "CAMEL_NER_MODEL", None)
-    if not camel_ner_model:
-        raise AttributeError("Missing Config.CAMEL_NER_MODEL (e.g., CAMeL-Lab/bert-base-arabic-camelbert-msa-ner)")
-    mbert_ner_model = getattr(Config, "MBERT_NER_MODEL", None) or MBERT_NER_MODEL
-
     # Sentiment parameters (start from module defaults, override as needed)
     SENTIMENT_PARAMS = dict(DEFAULT_SENTIMENT_PARAMS)
-
-    # Sentiment model names
-    arabert_sent_model = getattr(Config, "ARABERT_SENTIMENT_MODEL", None) or ARABERT_SENTIMENT_MODEL
-    camel_sent_model = getattr(Config, "CAMEL_SENTIMENT_MODEL", None) or CAMEL_SENTIMENT_MODEL
-    mbert_sent_model = getattr(Config, "MBERT_SENTIMENT_MODEL", None) or MBERT_SENTIMENT_MODEL
 
     # ============================================================
     # LOG RUN CONFIG (run.log + run_config.json)
@@ -123,8 +109,8 @@ def main():
         },
         "preprocessing_presets": {
             "lang_detect": PREPROCESS_LANG_DETECT_PARAMS,
-            "keywords": PREPROCESS_KEYWORDS_PARAMS,
             "ner": PREPROCESS_NER_PARAMS,
+            "sentiment": PREPROCESS_SENTIMENT_PARAMS,
         },
         "language_detection": {
             "fasttext_model_path": Config.FASTTEXT_MODEL_PATH,
@@ -133,8 +119,8 @@ def main():
         "ner": {
             "models": {
                 "arabert": {"id_model": 0, "model_name": Config.ARABERT_NER_MODEL},
-                "camel": {"id_model": 1, "model_name": camel_ner_model},
-                "mbert": {"id_model": 2, "model_name": mbert_ner_model},
+                "camel": {"id_model": 1, "model_name": Config.CAMEL_NER_MODEL},
+                "mbert": {"id_model": 2, "model_name": Config.MBERT_NER_MODEL},
             },
             "params": NER_PARAMS,
             "outputs": {
@@ -144,12 +130,13 @@ def main():
         },
         "sentiment": {
             "models": {
-                "arabert": {"id_model": 0, "model_name": arabert_sent_model, "labels": "POS/NEG/NEU/MIX"},
-                "camel": {"id_model": 1, "model_name": camel_sent_model, "labels": "POS/NEG/NEU (expected)"},
-                "mbert": {"id_model": 2, "model_name": mbert_sent_model, "labels": "1-5 stars mapped to NEG/NEU/POS"},
+                "arabert": {"id_model": 0, "model_name": Config.ARABERT_SENTIMENT_MODEL, "labels": "POS/NEG/NEU/MIX"},
+                "camel": {"id_model": 1, "model_name": Config.CAMEL_SENTIMENT_MODEL, "labels": "POS/NEG/NEU (expected)"},
+                "mbert": {"id_model": 2, "model_name": Config.MBERT_SENTIMENT_MODEL, "labels": "1-5 stars mapped to NEG/NEU/POS"},
             },
             "params": SENTIMENT_PARAMS,
             "outputs": {
+                "sample_sentiment_preprocessed.csv": "article_id + text_sentiment",
                 "sentiment_results.csv": "1 row per article per model",
             },
         },
@@ -242,18 +229,24 @@ def main():
     arabic_df = merged[(merged["lang"] == "ar") & (merged["score"] >= LANG_THRESHOLD)].copy()
     logger.info(f"Arabic subset (lang='ar' & score>={LANG_THRESHOLD}): {len(arabic_df)} rows")
 
+    # Build task-specific preprocessed text columns
     arabic_df["text_ner"] = arabic_df["text_raw"].apply(preproc.preprocess_for_ner)
+    arabic_df["text_sentiment"] = arabic_df["text_raw"].apply(preproc.preprocess_for_sentiment)
 
     ner_pre_csv = run_dir / "sample_ner_preprocessed.csv"
     arabic_df[["id", "text_ner"]].to_csv(ner_pre_csv, index=False, encoding="utf-8-sig")
     logger.info(f"Saved NER preprocessed CSV: {ner_pre_csv}")
 
+    sent_pre_csv = run_dir / "sample_sentiment_preprocessed.csv"
+    arabic_df[["id", "text_sentiment"]].to_csv(sent_pre_csv, index=False, encoding="utf-8-sig")
+    logger.info(f"Saved sentiment preprocessed CSV: {sent_pre_csv}")
+
     # ============================================================
     # NER (AraBERT vs CAMeL vs mBERT)
     # ============================================================
     ner_arabert = TransformersNER(model_name=Config.ARABERT_NER_MODEL, logger=logger, preprocessor=None, **NER_PARAMS)
-    ner_camel = TransformersNER(model_name=camel_ner_model, logger=logger, preprocessor=None, **NER_PARAMS)
-    ner_mbert = TransformersNER(model_name=mbert_ner_model, logger=logger, preprocessor=None, **NER_PARAMS)
+    ner_camel = TransformersNER(model_name=Config.CAMEL_NER_MODEL, logger=logger, preprocessor=None, **NER_PARAMS)
+    ner_mbert = TransformersNER(model_name=Config.MBERT_NER_MODEL, logger=logger, preprocessor=None, **NER_PARAMS)
 
     entity_rows = []
     for r in arabic_df.itertuples(index=False):
@@ -295,23 +288,23 @@ def main():
     # Sentiment (1 row per article per model)
     # ============================================================
     sent_arabert = TransformersSentiment(
-        model_name=arabert_sent_model,
+        model_name=Config.ARABERT_SENTIMENT_MODEL,
         logger=logger,
-        preprocessor=None,
-        label_normalizer=normalize_arabert_prali4,  # <-- IMPORTANT UPDATE
+        preprocessor=preproc,  # will use preprocess_for_sentiment
+        label_normalizer=normalize_arabert_prali4,
         **SENTIMENT_PARAMS
     )
     sent_camel = TransformersSentiment(
-        model_name=camel_sent_model,
+        model_name=Config.CAMEL_SENTIMENT_MODEL,
         logger=logger,
-        preprocessor=None,
+        preprocessor=preproc,  # will use preprocess_for_sentiment
         label_normalizer=normalize_3class_label,
         **SENTIMENT_PARAMS
     )
     sent_mbert = TransformersSentiment(
-        model_name=mbert_sent_model,
+        model_name=Config.MBERT_SENTIMENT_MODEL,
         logger=logger,
-        preprocessor=None,
+        preprocessor=preproc,  # will use preprocess_for_sentiment
         label_normalizer=normalize_nlptown_stars,
         **SENTIMENT_PARAMS
     )
@@ -319,7 +312,7 @@ def main():
     sentiment_rows = []
     for r in arabic_df.itertuples(index=False):
         article_id = int(r.id)
-        text = r.text_ner
+        text = r.text_sentiment  # use sentiment-specific preprocessing output
 
         try:
             ra = sent_arabert.predict(text)

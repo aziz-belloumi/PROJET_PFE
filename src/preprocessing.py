@@ -5,7 +5,6 @@ from typing import Optional, Dict, Any
 import logging
 
 
-
 PREPROCESS_LANG_DETECT_PARAMS: Dict[str, Any] = {
     "remove_diacritics": False,
     "normalize_arabic": True,
@@ -16,20 +15,8 @@ PREPROCESS_LANG_DETECT_PARAMS: Dict[str, Any] = {
     "remove_repeated": False,
     "remove_tatweel": False,
     "handle_hashtags": False,
+    "fix_merged_libya": False,
 }
-
-PREPROCESS_KEYWORDS_PARAMS: Dict[str, Any] = {
-    "remove_diacritics": True,
-    "normalize_arabic": True,
-    "remove_urls": True,
-    "remove_emails": True,
-    "remove_numbers": True,
-    "remove_special": True,
-    "remove_repeated": True,
-    "remove_tatweel": True,
-    "handle_hashtags": False,
-}
-
 
 PREPROCESS_NER_PARAMS: Dict[str, Any] = {
     "remove_diacritics": True,
@@ -41,14 +28,41 @@ PREPROCESS_NER_PARAMS: Dict[str, Any] = {
     "remove_repeated": False,
     "remove_tatweel": True,
     "handle_hashtags": True,
+    "fix_merged_libya": True,   # NEW
 }
+
+PREPROCESS_SENTIMENT_PARAMS: Dict[str, Any] = {
+    "remove_diacritics": True,
+    "normalize_arabic": True,
+    "remove_urls": True,
+    "remove_emails": True,
+    "remove_numbers": False,
+    "remove_special": True,
+    "remove_repeated": False,
+    "remove_tatweel": True,
+    "handle_hashtags": True,
+    "fix_merged_libya": True,   # NEW
+}
+
+"""PREPROCESS_KEYWORDS_PARAMS: Dict[str, Any] = {
+    "remove_diacritics": True,
+    "normalize_arabic": True,
+    "remove_urls": True,
+    "remove_emails": True,
+    "remove_numbers": True,
+    "remove_special": True,
+    "remove_repeated": True,
+    "remove_tatweel": True,
+    "handle_hashtags": False,
+    "fix_merged_libya": False,
+}"""
 
 
 class ArabicPreprocessor:
     # Arabic diacritics (tashkīl)
     ARABIC_DIACRITICS = re.compile(r"[\u064B-\u065F\u0670]")
-    # Arabic unicode ranges (chars + chunks)
-    ARABIC_CHAR = re.compile(r"[\u0600-\u06FF\u0750-\u077F]")       
+    # Arabic unicode ranges (single char)
+    ARABIC_CHAR = re.compile(r"[\u0600-\u06FF\u0750-\u077F]")
 
     def __init__(self, logger: Optional[logging.Logger] = None):
         self.logger = logger or logging.getLogger(__name__)
@@ -64,17 +78,14 @@ class ArabicPreprocessor:
     def normalize_arabic(self, text: str) -> str:
         if not text:
             return ""
-        # It standardizes Arabic characters by combining base letters and diacritics into a consistent Unicode form for reliable text processing.
-        text = unicodedata.normalize("NFC", text) 
-
-        return text
+        # Unicode NFC normalization (safe for all tasks; does not collapse Alef forms)
+        return unicodedata.normalize("NFC", text)
 
     def clean_html(self, text: str) -> str:
         # Remove tags
         text = re.sub(r"<[^>]+>", " ", text)
         # Decode entities (&nbsp; &#123; etc.)
-        text = html.unescape(text)
-        return text
+        return html.unescape(text)
 
     def normalize_whitespace(self, text: str) -> str:
         return re.sub(r"\s+", " ", text).strip()
@@ -104,6 +115,12 @@ class ArabicPreprocessor:
         replacement = r"\1" * max_repeat
         return re.sub(pattern, replacement, text)
 
+    def fix_merged_libya(self, text: str) -> str:
+        """
+        We only insert a space when 'ليبيا' is directly attached to a preceding Arabic character
+        """
+        # preceding char must be Arabic (not whitespace/punct)
+        return re.sub(r"([\u0600-\u06FF\u0750-\u077F])ليبيا", r"\1 ليبيا", text)
 
     def preprocess(
         self,
@@ -117,8 +134,8 @@ class ArabicPreprocessor:
         remove_repeated: bool = False,
         remove_tatweel: bool = True,
         handle_hashtags: bool = False,
+        fix_merged_libya: bool = False,   # NEW
     ) -> str:
-
         if not text or not isinstance(text, str):
             return ""
 
@@ -150,26 +167,25 @@ class ArabicPreprocessor:
         if remove_repeated:
             text = self.remove_repeated_chars(text, max_repeat=2)
 
+        # NEW: fix merged ليبيا near the end (after most cleaning)
+        if fix_merged_libya:
+            text = self.fix_merged_libya(text)
+
         return self.normalize_whitespace(text)
 
     def preprocess_for_lang_detect(self, text: Optional[str]) -> str:
         return self.preprocess(text, **PREPROCESS_LANG_DETECT_PARAMS)
 
-    def preprocess_for_keywords(self, text: str) -> str:
-        return self.preprocess(text, **PREPROCESS_KEYWORDS_PARAMS)
+    """def preprocess_for_keywords(self, text: str) -> str:
+        return self.preprocess(text, **PREPROCESS_KEYWORDS_PARAMS)"""
 
     def preprocess_for_ner(self, text: str) -> str:
         return self.preprocess(text, **PREPROCESS_NER_PARAMS)
 
-
-
-
-
-
-
+    def preprocess_for_sentiment(self, text: str) -> str:
+        return self.preprocess(text, **PREPROCESS_SENTIMENT_PARAMS)
 
     def arabic_ratio(self, text: str) -> float:
-        # What percentage of this text is written in Arabic letters
         if not text:
             return 0.0
         arabic_chars = len(self.ARABIC_CHAR.findall(text))

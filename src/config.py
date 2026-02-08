@@ -65,9 +65,13 @@ class Config:
     # ========================================
     ARABERT_NER_MODEL = "hatmimoha/arabic-ner"
     CAMEL_NER_MODEL = "CAMeL-Lab/bert-base-arabic-camelbert-msa-ner"
+    MBERT_NER_MODEL = "Davlan/bert-base-multilingual-cased-ner-hrl"
 
 
     CAMEL_SENTIMENT_MODEL = "CAMeL-Lab/bert-base-arabic-camelbert-msa-sentiment"
+    ARABERT_SENTIMENT_MODEL = "PRAli22/AraBert-Arabic-Sentiment-Analysis"  # labels: Positive/Negative/Neutral/Mixed
+    MBERT_SENTIMENT_MODEL = "nlptown/bert-base-multilingual-uncased-sentiment"
+
 
 
     # ========================================
