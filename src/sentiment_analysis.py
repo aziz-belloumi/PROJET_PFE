@@ -3,48 +3,47 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, Optional, Any, List, Tuple
+from typing import Dict, Optional, Any, List, Tuple, Callable
 import logging
 
 import torch
 from transformers import AutoTokenizer, AutoModelForSequenceClassification, pipeline
 
 
-
-
 DEFAULT_SENTIMENT_PARAMS: Dict[str, Any] = {
     "max_chunk_tokens": 450,
     "overlap_tokens": 50,
-    "aggregation": "mean_probs",  # how to aggregate across chunks
+    "aggregation": "mean_probs",  # supported: mean_probs, max_chunk
 }
 
 
 @dataclass
 class SentimentResult:
-    label: str                 # normalized label (e.g., POS/NEG/NEU/MIX) or raw if no mapping
-    score: float               # confidence of chosen label
-    probs: Dict[str, float]    # averaged probabilities per raw label
-    raw_best_label: str        # best raw label before normalization
+    label: str                 # predicted label (argmax of normalized probs)
+    score: float               # probability of that label
+    probs: Dict[str, float]    # normalized probs (AraBERT: POS/NEG/NEU/MIX ; others: POS/NEG/NEU)
 
 
 class TransformersSentiment:
     """
-    Text sentiment classifier with:
-    - model loaded once
-    - token-based chunking (offset_mapping) to respect max length
-    - chunk-level probabilities aggregated to a document-level decision
+    Sentiment classifier with token-based chunking + aggregation.
+
+    You provide probs_normalizer to standardize keys:
+    - AraBERT PRali22: POS/NEG/NEU/MIX
+    - CAMeL: POS/NEG/NEU
+    - mBERT nlptown stars: POS/NEG/NEU
     """
 
     def __init__(
         self,
         model_name: str,
         logger: Optional[logging.Logger] = None,
-        preprocessor=None,   # expects a callable: preprocess(text)->str OR object with preprocess_for_ner/text method
+        preprocessor=None,  # callable OR object with preprocess_for_sentiment/preprocess_for_ner/preprocess
         device: Optional[int] = None,
         max_chunk_tokens: int = DEFAULT_SENTIMENT_PARAMS["max_chunk_tokens"],
         overlap_tokens: int = DEFAULT_SENTIMENT_PARAMS["overlap_tokens"],
         aggregation: str = DEFAULT_SENTIMENT_PARAMS["aggregation"],
-        label_normalizer=None,  # function(raw_best_label, probs)->normalized_label
+        probs_normalizer: Optional[Callable[[Dict[str, float]], Dict[str, float]]] = None,
     ):
         self.logger = logger or logging.getLogger(__name__)
         self.model_name = model_name
@@ -52,8 +51,9 @@ class TransformersSentiment:
 
         self.max_chunk_tokens = int(max_chunk_tokens)
         self.overlap_tokens = int(overlap_tokens)
-        self.aggregation = aggregation
-        self.label_normalizer = label_normalizer
+        self.aggregation = str(aggregation)
+
+        self.probs_normalizer = probs_normalizer
 
         if device is None:
             device = 0 if torch.cuda.is_available() else -1
@@ -62,7 +62,6 @@ class TransformersSentiment:
         self.tokenizer = AutoTokenizer.from_pretrained(model_name, use_fast=True)
         self.model = AutoModelForSequenceClassification.from_pretrained(model_name)
 
-        # We'll request all class scores (robustly across transformers versions)
         self._clf = pipeline(
             task="text-classification",
             model=self.model,
@@ -79,11 +78,18 @@ class TransformersSentiment:
             f"aggregation={self.aggregation}"
         )
 
+    def _preprocess_text(self, text: str) -> str:
+        if self.preprocessor is None:
+            return text
+        if callable(self.preprocessor):
+            return self.preprocessor(text)
+        if hasattr(self.preprocessor, "preprocess_for_sentiment"):
+            return self.preprocessor.preprocess_for_sentiment(text)
+        if hasattr(self.preprocessor, "preprocess_for_ner"):
+            return self.preprocessor.preprocess_for_ner(text)
+        return self.preprocessor.preprocess(text)
+
     def _token_chunks(self, text: str) -> List[Tuple[str, int]]:
-        """
-        Token-based chunking using offset_mapping.
-        Returns list of (chunk_text, offset_char) offsets are mainly for debug; not needed for sentiment.
-        """
         enc = self.tokenizer(
             text,
             return_offsets_mapping=True,
@@ -116,12 +122,6 @@ class TransformersSentiment:
         return chunks
 
     def _all_scores(self, chunk_text: str) -> List[Dict[str, float]]:
-        """
-        Returns list of {"label": ..., "score": ...} for all labels.
-        Works across transformers versions:
-        - some accept top_k=None
-        - some accept return_all_scores=True
-        """
         try:
             out = self._clf(chunk_text, top_k=None)
             if isinstance(out, list) and out and isinstance(out[0], list):
@@ -133,103 +133,105 @@ class TransformersSentiment:
                 return out[0]
             return out
 
+    @staticmethod
+    def _argmax(probs: Dict[str, float]) -> Tuple[str, float]:
+        if not probs:
+            return "UNK", 0.0
+        lab, sc = max(probs.items(), key=lambda x: x[1])
+        return str(lab), float(sc)
+
     def predict(self, text: str) -> SentimentResult:
         if not text or not isinstance(text, str):
-            return SentimentResult(label="UNK", score=0.0, probs={}, raw_best_label="UNK")
+            return SentimentResult(label="UNK", score=0.0, probs={})
 
-        # Preprocess (keep it flexible)
-        if self.preprocessor is not None:
-            if callable(self.preprocessor):
-                text = self.preprocessor(text)
-            elif hasattr(self.preprocessor, "preprocess_for_ner"):
-                text = self.preprocessor.preprocess_for_ner(text)
-            else:
-                text = self.preprocessor.preprocess(text)
-
+        text = self._preprocess_text(text)
         chunks = self._token_chunks(text)
         if not chunks:
-            return SentimentResult(label="UNK", score=0.0, probs={}, raw_best_label="UNK")
+            return SentimentResult(label="UNK", score=0.0, probs={})
 
-        probs_sum: Dict[str, float] = {}
-        weight_sum = 0.0
+        # ---- aggregate raw probs ----
+        if self.aggregation == "mean_probs":
+            probs_sum: Dict[str, float] = {}
+            weight_sum = 0.0
 
-        for chunk_text, _ in chunks:
-            scores = self._all_scores(chunk_text)
-            w = float(len(self.tokenizer(chunk_text, add_special_tokens=True)["input_ids"]))
-            weight_sum += w
+            for chunk_text, _ in chunks:
+                scores = self._all_scores(chunk_text)
+                w = float(len(self.tokenizer(chunk_text, add_special_tokens=True)["input_ids"]))
+                weight_sum += w
+                for d in scores:
+                    lab = str(d["label"])
+                    sc = float(d["score"])
+                    probs_sum[lab] = probs_sum.get(lab, 0.0) + sc * w
 
-            for d in scores:
-                lab = str(d["label"])
-                sc = float(d["score"])
-                probs_sum[lab] = probs_sum.get(lab, 0.0) + sc * w
+            raw_probs = {lab: (v / weight_sum) for lab, v in probs_sum.items()} if weight_sum > 0 else {}
 
-        probs_avg = {lab: (v / weight_sum) for lab, v in probs_sum.items()} if weight_sum > 0 else {}
+        elif self.aggregation == "max_chunk":
+            best_chunk_probs: Dict[str, float] = {}
+            best_score = -1.0
 
-        raw_best = max(probs_avg.items(), key=lambda x: x[1])[0] if probs_avg else "UNK"
-        best_score = float(probs_avg.get(raw_best, 0.0))
+            for chunk_text, _ in chunks:
+                scores = self._all_scores(chunk_text)
+                p = {str(d["label"]): float(d["score"]) for d in scores}
+                _, sc = self._argmax(p)
+                if sc > best_score:
+                    best_score = sc
+                    best_chunk_probs = p
 
-        if self.label_normalizer is not None:
-            final_label = self.label_normalizer(raw_best, probs_avg)
+            raw_probs = best_chunk_probs
+
         else:
-            final_label = raw_best
+            raise ValueError(f"Unknown aggregation mode: {self.aggregation}")
 
-        return SentimentResult(
-            label=final_label,
-            score=best_score,
-            probs=probs_avg,
-            raw_best_label=raw_best,
-        )
+        # ---- normalize probs keys ----
+        probs_norm = self.probs_normalizer(raw_probs) if self.probs_normalizer else raw_probs
 
-
-# ============================================================
-# Label normalization helpers
-# ============================================================
-
-def normalize_3class_label(raw_best: str, probs: Dict[str, float]) -> str:
-    """
-    Common normalizer for 3-class models with various label naming.
-    Returns POS/NEG/NEU or UNK.
-    """
-    r = (raw_best or "").upper()
-
-    if "NEG" in r:
-        return "NEG"
-    if "POS" in r:
-        return "POS"
-    if "NEU" in r:
-        return "NEU"
-
-    return r or "UNK"
+        label, score = self._argmax(probs_norm)
+        return SentimentResult(label=label, score=score, probs=probs_norm)
 
 
-def normalize_arabert_prali4(raw_best: str, probs: Dict[str, float]) -> str:
-    """
-    Normalizer for PRAli22/AraBert-Arabic-Sentiment-Analysis
-    id2label: Positive / Negative / Neutral / Mixed
-    Output: POS/NEG/NEU/MIX
-    """
-    r = (raw_best or "").strip().lower()
-    if r == "positive":
-        return "POS"
-    if r == "negative":
-        return "NEG"
-    if r == "neutral":
-        return "NEU"
-    if r == "mixed":
-        return "MIX"
-    return "UNK"
+# ==========================
+# Probability normalizers
+# ==========================
+
+def probs_norm_prali22_4class(raw_probs: Dict[str, float]) -> Dict[str, float]:
+    """PRAli22 labels: Positive/Negative/Neutral/Mixed -> POS/NEG/NEU/MIX"""
+    p = {k.strip().lower(): float(v) for k, v in raw_probs.items()}
+    return {
+        "POS": p.get("positive", 0.0),
+        "NEG": p.get("negative", 0.0),
+        "NEU": p.get("neutral", 0.0),
+        "MIX": p.get("mixed", 0.0),
+    }
 
 
-def normalize_nlptown_stars(raw_best: str, probs: Dict[str, float]) -> str:
-    """
-    nlptown model labels are like '1 star', '2 stars', ... '5 stars'.
-    Map to NEG/NEU/POS.
-    """
-    r = (raw_best or "").lower()
-    if r.startswith("1") or r.startswith("2"):
-        return "NEG"
-    if r.startswith("3"):
-        return "NEU"
-    if r.startswith("4") or r.startswith("5"):
-        return "POS"
-    return "UNK"
+def probs_norm_camel_3class(raw_probs: Dict[str, float]) -> Dict[str, float]:
+    """CAMeL labels: positive/negative/neutral -> POS/NEG/NEU"""
+    p = {k.strip().lower(): float(v) for k, v in raw_probs.items()}
+    return {
+        "POS": p.get("positive", 0.0),
+        "NEG": p.get("negative", 0.0),
+        "NEU": p.get("neutral", 0.0),
+    }
+
+
+def probs_norm_nlptown_to_3class(raw_probs: Dict[str, float]) -> Dict[str, float]:
+    """nlptown labels: 1..5 stars -> POS/NEG/NEU"""
+    p = {k.strip().lower(): float(v) for k, v in raw_probs.items()}
+
+    def get_star(n: int) -> float:
+        for key, val in p.items():
+            if key.startswith(f"{n} "):
+                return float(val)
+        return 0.0
+
+    s1 = get_star(1)
+    s2 = get_star(2)
+    s3 = get_star(3)
+    s4 = get_star(4)
+    s5 = get_star(5)
+
+    return {
+        "NEG": s1 + s2,
+        "NEU": s3,
+        "POS": s4 + s5,
+    }

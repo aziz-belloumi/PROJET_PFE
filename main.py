@@ -24,9 +24,9 @@ from src.ner_extraction import (
 from src.sentiment_analysis import (
     TransformersSentiment,
     DEFAULT_SENTIMENT_PARAMS,
-    normalize_3class_label,
-    normalize_nlptown_stars,
-    normalize_arabert_prali4,
+    probs_norm_prali22_4class,
+    probs_norm_camel_3class,
+    probs_norm_nlptown_to_3class,
 )
 
 
@@ -131,13 +131,13 @@ def main():
         "sentiment": {
             "models": {
                 "arabert": {"id_model": 0, "model_name": Config.ARABERT_SENTIMENT_MODEL, "labels": "POS/NEG/NEU/MIX"},
-                "camel": {"id_model": 1, "model_name": Config.CAMEL_SENTIMENT_MODEL, "labels": "POS/NEG/NEU (expected)"},
-                "mbert": {"id_model": 2, "model_name": Config.MBERT_SENTIMENT_MODEL, "labels": "1-5 stars mapped to NEG/NEU/POS"},
+                "camel": {"id_model": 1, "model_name": Config.CAMEL_SENTIMENT_MODEL, "labels": "POS/NEG/NEU"},
+                "mbert": {"id_model": 2, "model_name": Config.MBERT_SENTIMENT_MODEL, "labels": "POS/NEG/NEU (stars mapped)"},
             },
             "params": SENTIMENT_PARAMS,
             "outputs": {
                 "sample_sentiment_preprocessed.csv": "article_id + text_sentiment",
-                "sentiment_results.csv": "1 row per article per model",
+                "sentiment_results.csv": "1 row per article per model (no raw_best_label)",
             },
         },
     }
@@ -173,7 +173,6 @@ def main():
     lang_ref = pd.read_sql("SELECT id, code FROM language", engine)
     lang_map = dict(zip(lang_ref["id"], lang_ref["code"]))
     df["expected_lang"] = df["id_language"].map(lang_map)
-    # --------------------------------------------------------------------------
 
     # 2) Save raw sample CSV
     sample_csv = run_dir / "sample_raw.csv"
@@ -286,33 +285,37 @@ def main():
 
     # ============================================================
     # Sentiment (1 row per article per model)
+    # - AraBERT: POS/NEG/NEU/MIX
+    # - CAMeL: POS/NEG/NEU
+    # - mBERT: POS/NEG/NEU (stars mapped)
+    # IMPORTANT: preprocessor=None because we already pass text_sentiment (avoid double preprocessing)
     # ============================================================
     sent_arabert = TransformersSentiment(
         model_name=Config.ARABERT_SENTIMENT_MODEL,
         logger=logger,
-        preprocessor=preproc,  # will use preprocess_for_sentiment
-        label_normalizer=normalize_arabert_prali4,
+        preprocessor=None,
+        probs_normalizer=probs_norm_prali22_4class,
         **SENTIMENT_PARAMS
     )
     sent_camel = TransformersSentiment(
         model_name=Config.CAMEL_SENTIMENT_MODEL,
         logger=logger,
-        preprocessor=preproc,  # will use preprocess_for_sentiment
-        label_normalizer=normalize_3class_label,
+        preprocessor=None,
+        probs_normalizer=probs_norm_camel_3class,
         **SENTIMENT_PARAMS
     )
     sent_mbert = TransformersSentiment(
         model_name=Config.MBERT_SENTIMENT_MODEL,
         logger=logger,
-        preprocessor=preproc,  # will use preprocess_for_sentiment
-        label_normalizer=normalize_nlptown_stars,
+        preprocessor=None,
+        probs_normalizer=probs_norm_nlptown_to_3class,
         **SENTIMENT_PARAMS
     )
 
     sentiment_rows = []
     for r in arabic_df.itertuples(index=False):
         article_id = int(r.id)
-        text = r.text_sentiment  # use sentiment-specific preprocessing output
+        text = r.text_sentiment
 
         try:
             ra = sent_arabert.predict(text)
@@ -338,7 +341,6 @@ def main():
                 "id_model": 0,
                 "label": ra.label,
                 "score": ra.score,
-                "raw_best_label": ra.raw_best_label,
                 "probs_json": json.dumps(ra.probs, ensure_ascii=False),
             })
 
@@ -348,7 +350,6 @@ def main():
                 "id_model": 1,
                 "label": rc.label,
                 "score": rc.score,
-                "raw_best_label": rc.raw_best_label,
                 "probs_json": json.dumps(rc.probs, ensure_ascii=False),
             })
 
@@ -358,7 +359,6 @@ def main():
                 "id_model": 2,
                 "label": rm.label,
                 "score": rm.score,
-                "raw_best_label": rm.raw_best_label,
                 "probs_json": json.dumps(rm.probs, ensure_ascii=False),
             })
 

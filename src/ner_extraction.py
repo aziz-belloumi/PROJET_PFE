@@ -15,7 +15,7 @@ DEFAULT_MODEL_REGISTRY: Dict[int, str] = {
 
 DEFAULT_NER_PARAMS: Dict[str, Any] = {
     "max_chunk_tokens": 450,
-    "overlap_tokens": 80,
+    "overlap_tokens": 100,
     "score_threshold": 0.60,
     "merge_entities": True,
     "deduplicate": True,
