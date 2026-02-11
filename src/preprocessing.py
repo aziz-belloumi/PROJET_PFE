@@ -44,7 +44,7 @@ PREPROCESS_SENTIMENT_PARAMS: Dict[str, Any] = {
     "fix_merged_libya": True,   # NEW
 }
 
-"""PREPROCESS_KEYWORDS_PARAMS: Dict[str, Any] = {
+PREPROCESS_KEYWORDS_PARAMS: Dict[str, Any] = {
     "remove_diacritics": True,
     "normalize_arabic": True,
     "remove_urls": True,
@@ -55,7 +55,7 @@ PREPROCESS_SENTIMENT_PARAMS: Dict[str, Any] = {
     "remove_tatweel": True,
     "handle_hashtags": False,
     "fix_merged_libya": False,
-}"""
+}
 
 
 class ArabicPreprocessor:
@@ -176,8 +176,8 @@ class ArabicPreprocessor:
     def preprocess_for_lang_detect(self, text: Optional[str]) -> str:
         return self.preprocess(text, **PREPROCESS_LANG_DETECT_PARAMS)
 
-    """def preprocess_for_keywords(self, text: str) -> str:
-        return self.preprocess(text, **PREPROCESS_KEYWORDS_PARAMS)"""
+    def preprocess_for_keywords(self, text: str) -> str:
+        return self.preprocess(text, **PREPROCESS_KEYWORDS_PARAMS)
 
     def preprocess_for_ner(self, text: str) -> str:
         return self.preprocess(text, **PREPROCESS_NER_PARAMS)

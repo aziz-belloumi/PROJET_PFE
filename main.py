@@ -15,6 +15,7 @@ from src.preprocessing import (
     PREPROCESS_LANG_DETECT_PARAMS,
     PREPROCESS_NER_PARAMS,
     PREPROCESS_SENTIMENT_PARAMS,
+    PREPROCESS_KEYWORDS_PARAMS,
 )
 from src.language_detection import FastTextLanguageDetector
 from src.ner_extraction import (
@@ -28,6 +29,7 @@ from src.sentiment_analysis import (
     probs_norm_camel_3class,
     probs_norm_nlptown_to_3class,
 )
+from src.keyword_extraction import TFIDFKeywordExtractor
 
 
 def setup_logger():
@@ -75,6 +77,10 @@ def main():
     # Sentiment parameters (start from module defaults, override as needed)
     SENTIMENT_PARAMS = dict(DEFAULT_SENTIMENT_PARAMS)
 
+    # Keyword extraction parameters
+    KW_MAX_FEATURES = 1000
+    KW_TOP_N = 10
+
     # ============================================================
     # LOG RUN CONFIG (run.log + run_config.json)
     # ============================================================
@@ -90,6 +96,7 @@ def main():
                 "transformers": _pkg_version("transformers"),
                 "torch": _pkg_version("torch"),
                 "fasttext-wheel": _pkg_version("fasttext-wheel"),
+                "scikit-learn": _pkg_version("scikit-learn"),
             },
         },
         "database": {
@@ -111,6 +118,7 @@ def main():
             "lang_detect": PREPROCESS_LANG_DETECT_PARAMS,
             "ner": PREPROCESS_NER_PARAMS,
             "sentiment": PREPROCESS_SENTIMENT_PARAMS,
+            "keywords": PREPROCESS_KEYWORDS_PARAMS,
         },
         "language_detection": {
             "fasttext_model_path": Config.FASTTEXT_MODEL_PATH,
@@ -138,6 +146,19 @@ def main():
             "outputs": {
                 "sample_sentiment_preprocessed.csv": "article_id + text_sentiment",
                 "sentiment_results.csv": "1 row per article per model (no raw_best_label)",
+            },
+        },
+        "keywords": {
+            "engine": "TF-IDF (scikit-learn)",
+            "max_features": KW_MAX_FEATURES,
+            "top_n": KW_TOP_N,
+            "vectorizer_params": {
+                "max_df": 0.95,
+                "min_df": 2,
+            },
+            "outputs": {
+                "sample_keywords_preprocessed.csv": "article_id + text_keywords",
+                "keyword_results.csv": "1 row per article; columns: article_id, keywords (ranked list with scores)",
             },
         },
     }
@@ -216,7 +237,7 @@ def main():
     logger.info(f"Saved language detection CSV: {lang_csv}")
 
     # ============================================================
-    # Filter Arabic articles for NER + Sentiment
+    # Filter Arabic articles for NER + Sentiment + Keywords
     # ============================================================
     merged = df.merge(
         lang_df[["article_id", "lang", "score"]],
@@ -231,6 +252,7 @@ def main():
     # Build task-specific preprocessed text columns
     arabic_df["text_ner"] = arabic_df["text_raw"].apply(preproc.preprocess_for_ner)
     arabic_df["text_sentiment"] = arabic_df["text_raw"].apply(preproc.preprocess_for_sentiment)
+    arabic_df["text_keywords"] = arabic_df["text_raw"].apply(preproc.preprocess_for_keywords)
 
     ner_pre_csv = run_dir / "sample_ner_preprocessed.csv"
     arabic_df[["id", "text_ner"]].to_csv(ner_pre_csv, index=False, encoding="utf-8-sig")
@@ -239,6 +261,10 @@ def main():
     sent_pre_csv = run_dir / "sample_sentiment_preprocessed.csv"
     arabic_df[["id", "text_sentiment"]].to_csv(sent_pre_csv, index=False, encoding="utf-8-sig")
     logger.info(f"Saved sentiment preprocessed CSV: {sent_pre_csv}")
+
+    kw_pre_csv = run_dir / "sample_keywords_preprocessed.csv"
+    arabic_df[["id", "text_keywords"]].to_csv(kw_pre_csv, index=False, encoding="utf-8-sig")
+    logger.info(f"Saved keywords preprocessed CSV: {kw_pre_csv}")
 
     # ============================================================
     # NER (AraBERT vs CAMeL vs mBERT)
@@ -285,10 +311,6 @@ def main():
 
     # ============================================================
     # Sentiment (1 row per article per model)
-    # - AraBERT: POS/NEG/NEU/MIX
-    # - CAMeL: POS/NEG/NEU
-    # - mBERT: POS/NEG/NEU (stars mapped)
-    # IMPORTANT: preprocessor=None because we already pass text_sentiment (avoid double preprocessing)
     # ============================================================
     sent_arabert = TransformersSentiment(
         model_name=Config.ARABERT_SENTIMENT_MODEL,
@@ -371,6 +393,52 @@ def main():
     pd.DataFrame(sentiment_rows).to_csv(sentiment_csv, index=False, encoding="utf-8-sig")
     logger.info(f"Saved sentiment results CSV: {sentiment_csv}")
 
+    # ============================================================
+    # Keyword Extraction (TF-IDF)
+    # ============================================================
+    logger.info("=== KEYWORD EXTRACTION ===")
+
+    stopwords_list = Config.ARABIC_STOPWORDS
+    logger.info(f"Loaded {len(stopwords_list)} stopwords from Config")
+
+    kw_extractor = TFIDFKeywordExtractor(
+        stopwords=stopwords_list,
+        max_features=KW_MAX_FEATURES,
+        logger=logger,
+    )
+
+    # Fit on the full Arabic corpus for this run
+    corpus = arabic_df["text_keywords"].tolist()
+    kw_extractor.fit(corpus)
+
+    keyword_rows = []
+    for r in arabic_df.itertuples(index=False):
+        article_id = int(r.id)
+        text = r.text_keywords
+
+        try:
+            keywords = kw_extractor.extract(text, top_n=KW_TOP_N)
+        except Exception as e:
+            logger.error(f"Keyword extraction failed for article {article_id}: {e}")
+            keywords = []
+
+        # Build a single string: "word1 (0.4134), word2 (0.2756), ..."
+        kw_str = ", ".join(f"{word} ({score:.4f})" for word, score in keywords)
+
+        keyword_rows.append({
+            "article_id": article_id,
+            "keywords": kw_str,
+        })
+
+        logger.info(f"[KW {article_id}] extracted {len(keywords)} keywords")
+
+    kw_csv = run_dir / "keyword_results.csv"
+    pd.DataFrame(keyword_rows).to_csv(kw_csv, index=False, encoding="utf-8-sig")
+    logger.info(f"Saved keyword results CSV: {kw_csv}")
+
+    # ============================================================
+    # DONE
+    # ============================================================
     db.close()
     logger.info("Test done.")
 
