@@ -33,10 +33,10 @@ from src.keyword_extraction import TFIDFKeywordExtractor
 
 
 def setup_logger():
-    run_dir = Path("experiments") / datetime.now().strftime("%Y-%m-%d_%H-%M-%S_test")
+    run_dir = Path("experiments") / datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     run_dir.mkdir(parents=True, exist_ok=True)
 
-    logger = logging.getLogger("test")
+    logger = logging.getLogger("nlp_pipeline")
     logger.setLevel(Config.LOG_LEVEL)
     logger.handlers.clear()
     logger.propagate = False
@@ -59,13 +59,27 @@ def _pkg_version(name: str) -> str:
         return "unknown"
 
 
+def _round_probs(probs: dict, decimals: int = 4) -> dict:
+    """Round all probability values to N decimals."""
+    return {k: round(v, decimals) for k, v in probs.items()}
+
+
+def _format_entities(entities, decimals: int = 2) -> str:
+    """Format entity list into string: 'text (LBL, 0.94), text (LBL, 0.99), ...'"""
+    if not entities:
+        return ""
+    return ", ".join(
+        f"{e.text} ({e.label}, {e.score:.{decimals}f})" for e in entities
+    )
+
+
 def main():
     logger, run_dir = setup_logger()
 
     # ============================================================
     # EXPERIMENT PARAMETERS (tune here)
     # ============================================================
-    sample_size = 5
+    sample_size = 2000
     raw_table = getattr(Config, "RAW_TABLE", "article")
 
     # Language detection parameters
@@ -131,10 +145,8 @@ def main():
                 "mbert": {"id_model": 2, "model_name": Config.MBERT_NER_MODEL},
             },
             "params": NER_PARAMS,
-            "outputs": {
-                "sample_ner_preprocessed.csv": "article_id + text_ner",
-                "ner_entities.csv": "1 row per entity; id_model=0 arabert, id_model=1 camel, id_model=2 mbert",
-            },
+            "label_unification": "all labels → first 3 letters uppercased (PER, LOC, ORG, EVE, MIS)",
+            "storage": "1 row per article in ner_results table",
         },
         "sentiment": {
             "models": {
@@ -143,10 +155,7 @@ def main():
                 "mbert": {"id_model": 2, "model_name": Config.MBERT_SENTIMENT_MODEL, "labels": "POS/NEG/NEU (stars mapped)"},
             },
             "params": SENTIMENT_PARAMS,
-            "outputs": {
-                "sample_sentiment_preprocessed.csv": "article_id + text_sentiment",
-                "sentiment_results.csv": "1 row per article per model (no raw_best_label)",
-            },
+            "storage": "1 row per article in sentiment_results table (3 models × label+score+probs)",
         },
         "keywords": {
             "engine": "TF-IDF (scikit-learn)",
@@ -154,13 +163,19 @@ def main():
             "top_n": KW_TOP_N,
             "vectorizer_params": {
                 "max_df": 0.95,
-                "min_df": 2,
+                "min_df": 1,
             },
-            "outputs": {
-                "sample_keywords_preprocessed.csv": "article_id + text_keywords",
-                "keyword_results.csv": "1 row per article; columns: article_id, keywords (ranked list with scores)",
-            },
+            "storage": "1 row per article in keyword_results table",
         },
+        "result_tables": [
+            "lang_detection",
+            "preprocess_ner",
+            "preprocess_sentiment",
+            "preprocess_keywords",
+            "ner_results",
+            "sentiment_results",
+            "keyword_results",
+        ],
     }
 
     logger.info("=== RUN CONFIG ===\n" + json.dumps(run_config, indent=2, ensure_ascii=False))
@@ -177,7 +192,10 @@ def main():
     db = DatabaseConnection(logger=logger)
     engine = db.get_engine()
 
-    # 1) Fetch directly from raw table (NO title)
+    # Drop previous results and create fresh tables
+    db.init_result_tables()
+
+    # 1) Fetch directly from raw table
     query = f"""
         SELECT id, body, id_language
         FROM {raw_table}
@@ -195,46 +213,41 @@ def main():
     lang_map = dict(zip(lang_ref["id"], lang_ref["code"]))
     df["expected_lang"] = df["id_language"].map(lang_map)
 
-    # 2) Save raw sample CSV
-    sample_csv = run_dir / "sample_raw.csv"
-    df.to_csv(sample_csv, index=False, encoding="utf-8-sig")
-    logger.info(f"Saved raw sample CSV: {sample_csv}")
-
-    # 3) Preprocess for language detection + save CSV
+    # 2) Preprocess for language detection
     preproc = ArabicPreprocessor(logger=logger)
     df["text_raw"] = df["body"].fillna("")
     df["text_langdetect"] = df["text_raw"].apply(preproc.preprocess_for_lang_detect)
 
-    pre_csv = run_dir / "sample_lang_detect_preprocessed.csv"
-    df[["id", "id_language", "expected_lang", "text_langdetect"]].to_csv(pre_csv, index=False, encoding="utf-8-sig")
-    logger.info(f"Saved lang-detect preprocessed CSV: {pre_csv}")
-
-    # 4) Language detection
+    # 3) Language detection → save to lang_detection table
     detector = FastTextLanguageDetector(
         model_path=Config.FASTTEXT_MODEL_PATH,
         logger=logger,
         preprocessor=None,
     )
 
-    out = []
+    lang_results = []
     for r in df.itertuples(index=False):
         res = detector.detect(r.text_langdetect)
         expected = r.expected_lang if pd.notna(r.expected_lang) else None
         is_correct = (expected == res.lang) if expected is not None else None
 
-        out.append({
+        db.save_lang_detection(
+            article_id=int(r.id),
+            predicted_lang=res.lang,
+            confidence=round(res.score, 4),
+            expected_lang=expected,
+            is_correct=is_correct,
+        )
+
+        lang_results.append({
             "article_id": int(r.id),
             "lang": res.lang,
             "score": res.score,
-            "expected_lang": expected,
-            "is_correct": is_correct,
         })
-        logger.info(f"[{r.id}] expected={expected} pred={res.lang} correct={is_correct} score={res.score:.3f}")
+        logger.info(f"[LANG {r.id}] expected={expected} pred={res.lang} correct={is_correct} score={res.score:.3f}")
 
-    lang_csv = run_dir / "lang_detection.csv"
-    lang_df = pd.DataFrame(out)
-    lang_df.to_csv(lang_csv, index=False, encoding="utf-8-sig")
-    logger.info(f"Saved language detection CSV: {lang_csv}")
+    lang_df = pd.DataFrame(lang_results)
+    logger.info(f"Language detection complete: {len(lang_df)} results saved to DB")
 
     # ============================================================
     # Filter Arabic articles for NER + Sentiment + Keywords
@@ -254,26 +267,21 @@ def main():
     arabic_df["text_sentiment"] = arabic_df["text_raw"].apply(preproc.preprocess_for_sentiment)
     arabic_df["text_keywords"] = arabic_df["text_raw"].apply(preproc.preprocess_for_keywords)
 
-    ner_pre_csv = run_dir / "sample_ner_preprocessed.csv"
-    arabic_df[["id", "text_ner"]].to_csv(ner_pre_csv, index=False, encoding="utf-8-sig")
-    logger.info(f"Saved NER preprocessed CSV: {ner_pre_csv}")
-
-    sent_pre_csv = run_dir / "sample_sentiment_preprocessed.csv"
-    arabic_df[["id", "text_sentiment"]].to_csv(sent_pre_csv, index=False, encoding="utf-8-sig")
-    logger.info(f"Saved sentiment preprocessed CSV: {sent_pre_csv}")
-
-    kw_pre_csv = run_dir / "sample_keywords_preprocessed.csv"
-    arabic_df[["id", "text_keywords"]].to_csv(kw_pre_csv, index=False, encoding="utf-8-sig")
-    logger.info(f"Saved keywords preprocessed CSV: {kw_pre_csv}")
+    # Save preprocessed texts to DB
+    for r in arabic_df.itertuples(index=False):
+        aid = int(r.id)
+        db.save_preprocess_ner(aid, r.text_ner)
+        db.save_preprocess_sentiment(aid, r.text_sentiment)
+        db.save_preprocess_keywords(aid, r.text_keywords)
+    logger.info(f"Saved preprocessed texts to DB for {len(arabic_df)} articles")
 
     # ============================================================
-    # NER (AraBERT vs CAMeL vs mBERT)
+    # NER (AraBERT vs CAMeL vs mBERT) → 1 row per article
     # ============================================================
     ner_arabert = TransformersNER(model_name=Config.ARABERT_NER_MODEL, logger=logger, preprocessor=None, **NER_PARAMS)
     ner_camel = TransformersNER(model_name=Config.CAMEL_NER_MODEL, logger=logger, preprocessor=None, **NER_PARAMS)
     ner_mbert = TransformersNER(model_name=Config.MBERT_NER_MODEL, logger=logger, preprocessor=None, **NER_PARAMS)
 
-    entity_rows = []
     for r in arabic_df.itertuples(index=False):
         text = r.text_ner
         article_id = int(r.id)
@@ -296,21 +304,19 @@ def main():
             logger.error(f"mBERT NER failed for article {article_id}: {e}")
             ents_m = []
 
-        for e in ents_a:
-            entity_rows.append({"article_id": article_id, "id_model": 0, "text": e.text, "label": e.label, "start": e.start, "end": e.end, "score": e.score})
-        for e in ents_c:
-            entity_rows.append({"article_id": article_id, "id_model": 1, "text": e.text, "label": e.label, "start": e.start, "end": e.end, "score": e.score})
-        for e in ents_m:
-            entity_rows.append({"article_id": article_id, "id_model": 2, "text": e.text, "label": e.label, "start": e.start, "end": e.end, "score": e.score})
+        db.save_ner_results(
+            article_id=article_id,
+            arabert_entities=_format_entities(ents_a),
+            camel_entities=_format_entities(ents_c),
+            mbert_entities=_format_entities(ents_m),
+        )
 
         logger.info(f"[NER {article_id}] arabert={len(ents_a)} camel={len(ents_c)} mbert={len(ents_m)}")
 
-    ner_entities_csv = run_dir / "ner_entities.csv"
-    pd.DataFrame(entity_rows).to_csv(ner_entities_csv, index=False, encoding="utf-8-sig")
-    logger.info(f"Saved NER entities CSV: {ner_entities_csv}")
+    logger.info(f"NER complete: results saved to DB")
 
     # ============================================================
-    # Sentiment (1 row per article per model)
+    # Sentiment → 1 row per article (3 models × label+score+probs)
     # ============================================================
     sent_arabert = TransformersSentiment(
         model_name=Config.ARABERT_SENTIMENT_MODEL,
@@ -334,7 +340,6 @@ def main():
         **SENTIMENT_PARAMS
     )
 
-    sentiment_rows = []
     for r in arabic_df.itertuples(index=False):
         article_id = int(r.id)
         text = r.text_sentiment
@@ -357,44 +362,28 @@ def main():
             logger.error(f"mBERT sentiment failed for article {article_id}: {e}")
             rm = None
 
-        if ra is not None:
-            sentiment_rows.append({
-                "article_id": article_id,
-                "id_model": 0,
-                "label": ra.label,
-                "score": ra.score,
-                "probs_json": json.dumps(ra.probs, ensure_ascii=False),
-            })
-
-        if rc is not None:
-            sentiment_rows.append({
-                "article_id": article_id,
-                "id_model": 1,
-                "label": rc.label,
-                "score": rc.score,
-                "probs_json": json.dumps(rc.probs, ensure_ascii=False),
-            })
-
-        if rm is not None:
-            sentiment_rows.append({
-                "article_id": article_id,
-                "id_model": 2,
-                "label": rm.label,
-                "score": rm.score,
-                "probs_json": json.dumps(rm.probs, ensure_ascii=False),
-            })
+        db.save_sentiment_results(
+            article_id=article_id,
+            arabert_label=ra.label if ra else None,
+            arabert_score=round(ra.score, 4) if ra else None,
+            arabert_probs=json.dumps(_round_probs(ra.probs), ensure_ascii=False) if ra else None,
+            camel_label=rc.label if rc else None,
+            camel_score=round(rc.score, 4) if rc else None,
+            camel_probs=json.dumps(_round_probs(rc.probs), ensure_ascii=False) if rc else None,
+            mbert_label=rm.label if rm else None,
+            mbert_score=round(rm.score, 4) if rm else None,
+            mbert_probs=json.dumps(_round_probs(rm.probs), ensure_ascii=False) if rm else None,
+        )
 
         logger.info(
             f"[SENT {article_id}] "
             f"arabert={getattr(ra, 'label', None)} camel={getattr(rc, 'label', None)} mbert={getattr(rm, 'label', None)}"
         )
 
-    sentiment_csv = run_dir / "sentiment_results.csv"
-    pd.DataFrame(sentiment_rows).to_csv(sentiment_csv, index=False, encoding="utf-8-sig")
-    logger.info(f"Saved sentiment results CSV: {sentiment_csv}")
+    logger.info(f"Sentiment complete: results saved to DB")
 
     # ============================================================
-    # Keyword Extraction (TF-IDF)
+    # Keyword Extraction (TF-IDF) → 1 row per article
     # ============================================================
     logger.info("=== KEYWORD EXTRACTION ===")
 
@@ -407,11 +396,9 @@ def main():
         logger=logger,
     )
 
-    # Fit on the full Arabic corpus for this run
     corpus = arabic_df["text_keywords"].tolist()
     kw_extractor.fit(corpus)
 
-    keyword_rows = []
     for r in arabic_df.itertuples(index=False):
         article_id = int(r.id)
         text = r.text_keywords
@@ -422,25 +409,19 @@ def main():
             logger.error(f"Keyword extraction failed for article {article_id}: {e}")
             keywords = []
 
-        # Build a single string: "word1 (0.4134), word2 (0.2756), ..."
         kw_str = ", ".join(f"{word} ({score:.4f})" for word, score in keywords)
 
-        keyword_rows.append({
-            "article_id": article_id,
-            "keywords": kw_str,
-        })
+        db.save_keyword_results(article_id=article_id, keywords=kw_str)
 
         logger.info(f"[KW {article_id}] extracted {len(keywords)} keywords")
 
-    kw_csv = run_dir / "keyword_results.csv"
-    pd.DataFrame(keyword_rows).to_csv(kw_csv, index=False, encoding="utf-8-sig")
-    logger.info(f"Saved keyword results CSV: {kw_csv}")
+    logger.info(f"Keyword extraction complete: results saved to DB")
 
     # ============================================================
     # DONE
     # ============================================================
     db.close()
-    logger.info("Test done.")
+    logger.info("Pipeline complete.")
 
 
 if __name__ == "__main__":

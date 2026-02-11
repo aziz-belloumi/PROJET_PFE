@@ -1,3 +1,5 @@
+# src/ner_extraction.py
+
 from __future__ import annotations
 from dataclasses import dataclass
 from typing import List, Dict, Optional, Any, Tuple
@@ -26,6 +28,22 @@ DEFAULT_NER_PARAMS: Dict[str, Any] = {
 }
 
 
+# Unified label mapping: any label → first 3 letters uppercased
+LABEL_UNIFICATION = {
+    "PERSON": "PER",
+    "PERS": "PER",
+    "PER": "PER",
+    "LOCATION": "LOC",
+    "LOC": "LOC",
+    "ORGANIZATION": "ORG",
+    "ORG": "ORG",
+    "EVENT": "EVE",
+    "EVE": "EVE",
+    "MISCELLANEOUS": "MIS",
+    "MISC": "MIS",
+}
+
+
 @dataclass
 class NEREntity:
     text: str
@@ -44,6 +62,7 @@ class TransformersNER:
     - word-boundary expansion for short entities to reduce fragments
     - merge adjacent entities (safe punctuation gaps) WITHOUT merging overlaps/duplicates
     - deduplication because of overlap (done BEFORE merge to avoid duplicated texts)
+    - unified labels: all labels mapped to 3-letter codes (PER, LOC, ORG, EVE, MIS)
     """
 
     _MERGE_GAP_ALLOWED_CHARS = set(" \t\r\n" + ".,،؛:!?-–—ـ/\\()[]{}\"'")
@@ -53,7 +72,7 @@ class TransformersNER:
         self,
         model_name: str,
         logger: Optional[logging.Logger] = None,
-        preprocessor=None,  # expects preprocess_for_ner(text) -> str
+        preprocessor=None,
         device: Optional[int] = None,
         max_chunk_tokens: int = DEFAULT_NER_PARAMS["max_chunk_tokens"],
         overlap_tokens: int = DEFAULT_NER_PARAMS["overlap_tokens"],
@@ -114,7 +133,12 @@ class TransformersNER:
 
     @staticmethod
     def _normalize_label(label: str) -> str:
-        return (label or "UNK").upper()
+        """Unify label to 3-letter code. Unknown labels → first 3 letters uppercased."""
+        raw = (label or "UNK").upper().strip()
+        if raw in LABEL_UNIFICATION:
+            return LABEL_UNIFICATION[raw]
+        # Fallback: first 3 letters
+        return raw[:3] if len(raw) >= 3 else raw
 
     @staticmethod
     def _strip_weird(text: str) -> str:
@@ -133,7 +157,7 @@ class TransformersNER:
 
     def _min_len_for_label(self, label: str) -> int:
         l = self._normalize_label(label)
-        if l in {"PER", "PERSON"}:
+        if l == "PER":
             return self.min_len_person
         return self.min_len_other
 

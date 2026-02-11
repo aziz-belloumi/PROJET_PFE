@@ -54,7 +54,7 @@ PREPROCESS_KEYWORDS_PARAMS: Dict[str, Any] = {
     "remove_repeated": True,
     "remove_tatweel": True,
     "handle_hashtags": False,
-    "fix_merged_libya": False,
+    "fix_merged_libya": True,
 }
 
 
