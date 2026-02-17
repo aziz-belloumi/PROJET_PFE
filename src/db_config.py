@@ -141,6 +141,7 @@ class DatabaseConnection:
                 conn.execute(text("""
                 CREATE TABLE keyword_results (
                     article_id BIGINT PRIMARY KEY,
+                    keywords_count INT,
                     keywords LONGTEXT
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
                 """))
@@ -238,12 +239,16 @@ class DatabaseConnection:
             "m_pr": mbert_probs,
         })
 
-    def save_keyword_results(self, article_id, keywords):
+    def save_keyword_results(self, article_id, keywords, keywords_count: int):
         sql = """
-            INSERT INTO keyword_results (article_id, keywords)
-            VALUES (:aid, :kw)
+            INSERT INTO keyword_results (article_id, keywords_count, keywords)
+            VALUES (:aid, :kc, :kw)
         """
-        self.execute_query(sql, {"aid": article_id, "kw": keywords})
+        self.execute_query(sql, {
+            "aid": int(article_id),
+        "kc": int(keywords_count),
+        "kw": keywords,
+    })
 
     # ============================================================
     # Cleanup

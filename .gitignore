@@ -18,3 +18,7 @@ __pycache__/
 
 # Windows specific
 Thumbs.db
+
+# Results
+results/*
+!results/.gitkeep
