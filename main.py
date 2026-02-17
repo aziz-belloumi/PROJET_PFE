@@ -6,8 +6,10 @@ import sys
 import platform
 import importlib.metadata as md
 import time
+import gc
 
 import pandas as pd
+import torch
 
 from src.config import Config
 from src.db_config import DatabaseConnection
@@ -29,12 +31,10 @@ from src.sentiment_analysis import (
 )
 from src.keyword_extraction import TFIDFKeywordExtractor
 
-# Root-level comparison package (NLP_MENA/comparison)
 from comparison.report_generator import generate_comparison_report
 
 
 def setup_logger():
-    # All outputs for this run go under results/<timestamp>/
     run_dir = Path("results") / datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     run_dir.mkdir(parents=True, exist_ok=True)
 
@@ -71,35 +71,71 @@ def _format_entities(entities, decimals: int = 2) -> str:
     return ", ".join(f"{e.text} ({e.label}, {e.score:.{decimals}f})" for e in entities)
 
 
+def _cuda_sync_if_needed(device: int):
+    if device >= 0 and torch.cuda.is_available():
+        torch.cuda.synchronize()
+
+
+def _gpu_cleanup(logger: logging.Logger, cooldown_sec: float = 2.0):
+    # Free VRAM + cooldown to protect laptop GPU thermals
+    try:
+        torch.cuda.empty_cache()
+    except Exception:
+        pass
+    try:
+        torch.cuda.ipc_collect()
+    except Exception:
+        pass
+    gc.collect()
+    if cooldown_sec and cooldown_sec > 0:
+        logger.info(f"[GPU] cooldown {cooldown_sec:.1f}s")
+        time.sleep(cooldown_sec)
+
+
 def main():
     logger, run_dir = setup_logger()
     pipeline_t0 = time.perf_counter()
 
-    # ============================================================
+    # =========================
     # PARAMETERS
-    # ============================================================
+    # =========================
     sample_size = 100
     raw_table = getattr(Config, "RAW_TABLE", "article")
     LANG_THRESHOLD = 0.60
 
+    # Benchmark devices
+    CPU_DEVICE = -1
+    GPU_DEVICE = 0
+    GPU_COOLDOWN_SEC = 2.0
+
     NER_PARAMS = dict(DEFAULT_NER_PARAMS)
     SENTIMENT_PARAMS = dict(DEFAULT_SENTIMENT_PARAMS)
 
-    # Keyword extraction parameters
+    # Keywords (CPU once)
     KW_MAX_FEATURES = 1000
-
-    # Option D (flexible keywords)
     KW_MIN_K = 5
     KW_MAX_K = 25
     KW_REL_THRESHOLD = 0.30
     KW_COVERAGE_TARGET = 0.70
 
-    # Timing records collected locally (NOT stored in MySQL)
+    # Timing records -> timing_comparison.csv (CPU vs GPU + speedup)
+    # Each record: mode, task, model_name, article_id, elapsed_seconds
     timing_records = []
 
-    # ============================================================
-    # RUN CONFIG (stored in results/<run_id>/run_config.json)
-    # ============================================================
+    NER_MODELS = [
+        ("arabert", Config.ARABERT_NER_MODEL),
+        ("camel", Config.CAMEL_NER_MODEL),
+        ("mbert", Config.MBERT_NER_MODEL),
+    ]
+    SENT_MODELS = [
+        ("arabert", Config.ARABERT_SENTIMENT_MODEL, probs_norm_prali22_4class),
+        ("camel", Config.CAMEL_SENTIMENT_MODEL, probs_norm_camel_3class),
+        ("mbert", Config.MBERT_SENTIMENT_MODEL, probs_norm_nlptown_to_3class),
+    ]
+
+    # =========================
+    # RUN CONFIG
+    # =========================
     run_config = {
         "run_id": run_dir.name,
         "timestamp": datetime.now().isoformat(timespec="seconds"),
@@ -114,12 +150,17 @@ def main():
                 "fasttext-wheel": _pkg_version("fasttext-wheel"),
                 "scikit-learn": _pkg_version("scikit-learn"),
             },
+            "cuda_available": bool(torch.cuda.is_available()),
+            "torch_cuda": getattr(torch.version, "cuda", None),
         },
-        "database": {
-            "host": Config.DB_HOST,
-            "port": Config.DB_PORT,
-            "db_name": Config.DB_NAME,
-            "raw_table": raw_table,
+        "benchmark": {
+            "cpu_device": CPU_DEVICE,
+            "gpu_device": GPU_DEVICE,
+            "gpu_cooldown_sec": GPU_COOLDOWN_SEC,
+            "timing_scope": "predict() only (excludes MySQL writes)",
+            "cpu_strategy": "article-by-article with 3 models loaded (NER) + 3 models loaded (Sentiment)",
+            "gpu_strategy": "model-by-model (one model loaded at a time) to avoid OOM",
+            "mysql_writes": "GPU pass only for NER/Sentiment; Keywords written once on CPU",
         },
         "sampling": {
             "sample_size": sample_size,
@@ -128,7 +169,6 @@ def main():
                 "LENGTH(body) > 50",
                 "id_language = 2 (Arabic in DB)",
             ],
-            "ordering": "ORDER BY crawl_date DESC, id DESC",
         },
         "preprocessing_presets": {
             "lang_detect": PREPROCESS_LANG_DETECT_PARAMS,
@@ -136,82 +176,33 @@ def main():
             "sentiment": PREPROCESS_SENTIMENT_PARAMS,
             "keywords": PREPROCESS_KEYWORDS_PARAMS,
         },
-        "language_detection": {
-            "fasttext_model_path": Config.FASTTEXT_MODEL_PATH,
-            "threshold": LANG_THRESHOLD,
-            "storage": "MySQL table: lang_detection",
-        },
-        "ner": {
-            "models": {
-                "arabert": {"id_model": 0, "model_name": Config.ARABERT_NER_MODEL},
-                "camel": {"id_model": 1, "model_name": Config.CAMEL_NER_MODEL},
-                "mbert": {"id_model": 2, "model_name": Config.MBERT_NER_MODEL},
-            },
-            "params": NER_PARAMS,
-            "label_unification": "all labels → first 3 letters uppercased",
-            "storage": "MySQL table: ner_results (1 row/article)",
-        },
-        "sentiment": {
-            "models": {
-                "arabert": {"id_model": 0, "model_name": Config.ARABERT_SENTIMENT_MODEL},
-                "camel": {"id_model": 1, "model_name": Config.CAMEL_SENTIMENT_MODEL},
-                "mbert": {"id_model": 2, "model_name": Config.MBERT_SENTIMENT_MODEL},
-            },
-            "params": SENTIMENT_PARAMS,
-            "storage": "MySQL table: sentiment_results (1 row/article)",
-        },
         "keywords": {
-            "engine": "TF-IDF (scikit-learn)",
-            "max_features": KW_MAX_FEATURES,
-            "vectorizer_params": {"max_df": 0.95, "min_df": 1},
             "flexible_extraction": {
                 "min_k": KW_MIN_K,
                 "max_k": KW_MAX_K,
                 "rel_threshold": KW_REL_THRESHOLD,
                 "coverage_target": KW_COVERAGE_TARGET,
             },
-            "storage": "MySQL table: keyword_results (1 row/article)",
             "schema_note": "keyword_results includes keywords_count",
-        },
-        "mysql_result_tables": [
-            "lang_detection",
-            "preprocess_ner",
-            "preprocess_sentiment",
-            "preprocess_keywords",
-            "ner_results",
-            "sentiment_results",
-            "keyword_results",
-        ],
-        "comparison_outputs": {
-            "location": str(run_dir),
-            "files": [
-                "comparison.log",
-                "ner_comparison.csv",
-                "sentiment_comparison.csv",
-                "keyword_comparison.csv",
-                "timing_comparison.csv",
-            ],
         },
     }
 
     logger.info("=== RUN CONFIG ===\n" + json.dumps(run_config, indent=2, ensure_ascii=False))
-    run_config_path = run_dir / "run_config.json"
-    run_config_path.write_text(json.dumps(run_config, indent=2, ensure_ascii=False), encoding="utf-8")
-    logger.info(f"Saved run config JSON: {run_config_path}")
+    (run_dir / "run_config.json").write_text(
+        json.dumps(run_config, indent=2, ensure_ascii=False),
+        encoding="utf-8",
+    )
 
-    # ============================================================
-    # PIPELINE START
-    # ============================================================
-    logger.info(f"FASTTEXT_MODEL_PATH = {Config.FASTTEXT_MODEL_PATH}")
-    logger.info(f"DB = {Config.DB_NAME}@{Config.DB_HOST}:{Config.DB_PORT}")
-
+    # =========================
+    # DB INIT
+    # =========================
     db = DatabaseConnection(logger=logger)
     engine = db.get_engine()
-
-    # Drop previous results and create fresh tables
     db.init_result_tables()
 
-    # 1) Fetch from raw table
+    # =========================
+    # SAMPLE + PREPROCESS ONCE
+    # =========================
     query = f"""
         SELECT id, body, id_language
         FROM {raw_table}
@@ -224,24 +215,22 @@ def main():
     df = pd.read_sql(query, engine)
     logger.info(f"Fetched {len(df)} rows from {raw_table}")
 
-    # language mapping: id_language -> code
     lang_ref = pd.read_sql("SELECT id, code FROM language", engine)
     lang_map = dict(zip(lang_ref["id"], lang_ref["code"]))
     df["expected_lang"] = df["id_language"].map(lang_map)
 
-    # 2) Preprocess for language detection
     preproc = ArabicPreprocessor(logger=logger)
     df["text_raw"] = df["body"].fillna("")
     df["text_langdetect"] = df["text_raw"].apply(preproc.preprocess_for_lang_detect)
 
-    # 3) Language detection -> DB
+    # Language detection -> DB (CPU)
     detector = FastTextLanguageDetector(
         model_path=Config.FASTTEXT_MODEL_PATH,
         logger=logger,
         preprocessor=None,
     )
 
-    lang_results = []
+    lang_rows = []
     for r in df.itertuples(index=False):
         res = detector.detect(r.text_langdetect)
         expected = r.expected_lang if pd.notna(r.expected_lang) else None
@@ -254,16 +243,10 @@ def main():
             expected_lang=expected,
             is_correct=is_correct,
         )
+        lang_rows.append({"article_id": int(r.id), "lang": res.lang, "score": res.score})
 
-        lang_results.append({"article_id": int(r.id), "lang": res.lang, "score": res.score})
-        logger.info(f"[LANG {r.id}] expected={expected} pred={res.lang} correct={is_correct} score={res.score:.3f}")
+    lang_df = pd.DataFrame(lang_rows)
 
-    lang_df = pd.DataFrame(lang_results)
-    logger.info(f"Language detection complete: {len(lang_df)} rows saved to DB")
-
-    # ============================================================
-    # Filter Arabic articles
-    # ============================================================
     merged = df.merge(
         lang_df[["article_id", "lang", "score"]],
         left_on="id",
@@ -273,215 +256,223 @@ def main():
     arabic_df = merged[(merged["lang"] == "ar") & (merged["score"] >= LANG_THRESHOLD)].copy()
     logger.info(f"Arabic subset (lang='ar' & score>={LANG_THRESHOLD}): {len(arabic_df)} rows")
 
-    # Task-specific preprocessing
+    if arabic_df.empty:
+        logger.warning("No Arabic rows passed threshold; stopping.")
+        db.close()
+        return
+
     arabic_df["text_ner"] = arabic_df["text_raw"].apply(preproc.preprocess_for_ner)
     arabic_df["text_sentiment"] = arabic_df["text_raw"].apply(preproc.preprocess_for_sentiment)
     arabic_df["text_keywords"] = arabic_df["text_raw"].apply(preproc.preprocess_for_keywords)
 
-    # Save preprocessed texts to DB
+    # Save preprocessed texts -> DB (once)
     for r in arabic_df.itertuples(index=False):
         aid = int(r.id)
         db.save_preprocess_ner(aid, r.text_ner)
         db.save_preprocess_sentiment(aid, r.text_sentiment)
         db.save_preprocess_keywords(aid, r.text_keywords)
-    logger.info(f"Saved preprocessed texts to DB for {len(arabic_df)} articles")
 
-    # ============================================================
-    # NER (3 models) -> DB (1 row/article)
-    # ============================================================
-    ner_arabert = TransformersNER(model_name=Config.ARABERT_NER_MODEL, logger=logger, preprocessor=None, **NER_PARAMS)
-    ner_camel = TransformersNER(model_name=Config.CAMEL_NER_MODEL, logger=logger, preprocessor=None, **NER_PARAMS)
-    ner_mbert = TransformersNER(model_name=Config.MBERT_NER_MODEL, logger=logger, preprocessor=None, **NER_PARAMS)
-
-    for r in arabic_df.itertuples(index=False):
-        text = r.text_ner
-        article_id = int(r.id)
-
-        t0 = time.perf_counter()
-        try:
-            ents_a = ner_arabert.predict(text)
-        except Exception as e:
-            logger.error(f"AraBERT NER failed for article {article_id}: {e}")
-            ents_a = []
-        timing_records.append({"article_id": article_id, "task": "ner", "model_name": "arabert",
-                               "elapsed_seconds": round(time.perf_counter() - t0, 6)})
-
-        t0 = time.perf_counter()
-        try:
-            ents_c = ner_camel.predict(text)
-        except Exception as e:
-            logger.error(f"CAMeL NER failed for article {article_id}: {e}")
-            ents_c = []
-        timing_records.append({"article_id": article_id, "task": "ner", "model_name": "camel",
-                               "elapsed_seconds": round(time.perf_counter() - t0, 6)})
-
-        t0 = time.perf_counter()
-        try:
-            ents_m = ner_mbert.predict(text)
-        except Exception as e:
-            logger.error(f"mBERT NER failed for article {article_id}: {e}")
-            ents_m = []
-        timing_records.append({"article_id": article_id, "task": "ner", "model_name": "mbert",
-                               "elapsed_seconds": round(time.perf_counter() - t0, 6)})
-
-        db.save_ner_results(
-            article_id=article_id,
-            arabert_entities=_format_entities(ents_a),
-            camel_entities=_format_entities(ents_c),
-            mbert_entities=_format_entities(ents_m),
-        )
-        logger.info(f"[NER {article_id}] arabert={len(ents_a)} camel={len(ents_c)} mbert={len(ents_m)}")
-
-    logger.info("NER complete: results saved to DB")
-
-    # ============================================================
-    # Sentiment (3 models) -> DB (1 row/article)
-    # ============================================================
-    sent_arabert = TransformersSentiment(
-        model_name=Config.ARABERT_SENTIMENT_MODEL,
-        logger=logger,
-        preprocessor=None,
-        probs_normalizer=probs_norm_prali22_4class,
-        **SENTIMENT_PARAMS,
-    )
-    sent_camel = TransformersSentiment(
-        model_name=Config.CAMEL_SENTIMENT_MODEL,
-        logger=logger,
-        preprocessor=None,
-        probs_normalizer=probs_norm_camel_3class,
-        **SENTIMENT_PARAMS,
-    )
-    sent_mbert = TransformersSentiment(
-        model_name=Config.MBERT_SENTIMENT_MODEL,
-        logger=logger,
-        preprocessor=None,
-        probs_normalizer=probs_norm_nlptown_to_3class,
-        **SENTIMENT_PARAMS,
-    )
-
-    for r in arabic_df.itertuples(index=False):
-        article_id = int(r.id)
-        text = r.text_sentiment
-
-        t0 = time.perf_counter()
-        try:
-            ra = sent_arabert.predict(text)
-        except Exception as e:
-            logger.error(f"AraBERT sentiment failed for article {article_id}: {e}")
-            ra = None
-        timing_records.append({"article_id": article_id, "task": "sentiment", "model_name": "arabert",
-                               "elapsed_seconds": round(time.perf_counter() - t0, 6)})
-
-        t0 = time.perf_counter()
-        try:
-            rc = sent_camel.predict(text)
-        except Exception as e:
-            logger.error(f"CAMeL sentiment failed for article {article_id}: {e}")
-            rc = None
-        timing_records.append({"article_id": article_id, "task": "sentiment", "model_name": "camel",
-                               "elapsed_seconds": round(time.perf_counter() - t0, 6)})
-
-        t0 = time.perf_counter()
-        try:
-            rm = sent_mbert.predict(text)
-        except Exception as e:
-            logger.error(f"mBERT sentiment failed for article {article_id}: {e}")
-            rm = None
-        timing_records.append({"article_id": article_id, "task": "sentiment", "model_name": "mbert",
-                               "elapsed_seconds": round(time.perf_counter() - t0, 6)})
-
-        db.save_sentiment_results(
-            article_id=article_id,
-            arabert_label=ra.label if ra else None,
-            arabert_score=round(ra.score, 4) if ra else None,
-            arabert_probs=json.dumps(_round_probs(ra.probs), ensure_ascii=False) if ra else None,
-            camel_label=rc.label if rc else None,
-            camel_score=round(rc.score, 4) if rc else None,
-            camel_probs=json.dumps(_round_probs(rc.probs), ensure_ascii=False) if rc else None,
-            mbert_label=rm.label if rm else None,
-            mbert_score=round(rm.score, 4) if rm else None,
-            mbert_probs=json.dumps(_round_probs(rm.probs), ensure_ascii=False) if rm else None,
-        )
-
-        logger.info(
-            f"[SENT {article_id}] "
-            f"arabert={getattr(ra, 'label', None)} camel={getattr(rc, 'label', None)} mbert={getattr(rm, 'label', None)}"
-        )
-
-    logger.info("Sentiment complete: results saved to DB")
-
-    # ============================================================
-    # Keywords (TF-IDF) -> DB (1 row/article) [FLEXIBLE COUNT]
-    # ============================================================
-    logger.info("=== KEYWORD EXTRACTION ===")
-
-    stopwords_list = Config.ARABIC_STOPWORDS
-    logger.info(f"Loaded {len(stopwords_list)} stopwords from Config")
-
+    # =========================
+    # KEYWORDS (CPU ONCE) -> DB
+    # =========================
+    logger.info("=== KEYWORD EXTRACTION (CPU) ===")
     kw_extractor = TFIDFKeywordExtractor(
-        stopwords=stopwords_list,
+        stopwords=Config.ARABIC_STOPWORDS,
         max_features=KW_MAX_FEATURES,
         logger=logger,
     )
-
-    fit_t0 = time.perf_counter()
-    corpus = arabic_df["text_keywords"].tolist()
-    kw_extractor.fit(corpus)
-    logger.info(f"[KW FIT] TF-IDF fit time: {time.perf_counter() - fit_t0:.4f}s on {len(corpus)} documents")
+    kw_extractor.fit(arabic_df["text_keywords"].tolist())
 
     for r in arabic_df.itertuples(index=False):
-        article_id = int(r.id)
-        text = r.text_keywords
+        aid = int(r.id)
+        kws = kw_extractor.extract_flexible(
+            r.text_keywords,
+            min_k=KW_MIN_K,
+            max_k=KW_MAX_K,
+            rel_threshold=KW_REL_THRESHOLD,
+            coverage_target=KW_COVERAGE_TARGET,
+        )
+        kw_str = ", ".join(f"{w} ({s:.4f})" for w, s in kws)
+        db.save_keyword_results(article_id=aid, keywords=kw_str, keywords_count=len(kws))
 
-        t0 = time.perf_counter()
-        try:
-            keywords = kw_extractor.extract_flexible(
-                text,
-                min_k=KW_MIN_K,
-                max_k=KW_MAX_K,
-                rel_threshold=KW_REL_THRESHOLD,
-                coverage_target=KW_COVERAGE_TARGET,
-            )
-        except Exception as e:
-            logger.error(f"Keyword extraction failed for article {article_id}: {e}")
-            keywords = []
+    # =========================
+    # CPU PASS (article-by-article, 3 models loaded) - TIMING ONLY
+    # =========================
+    logger.info("=== CPU PASS (TIMING ONLY, 3 MODELS LOADED) ===")
 
-        timing_records.append({
-            "article_id": article_id,
-            "task": "keywords",
-            "model_name": "tfidf",
-            "elapsed_seconds": round(time.perf_counter() - t0, 6),
-        })
+    with torch.inference_mode():
+        ner_cpu_arabert = TransformersNER(model_name=Config.ARABERT_NER_MODEL, logger=logger, preprocessor=None, device=CPU_DEVICE, **NER_PARAMS)
+        ner_cpu_camel = TransformersNER(model_name=Config.CAMEL_NER_MODEL, logger=logger, preprocessor=None, device=CPU_DEVICE, **NER_PARAMS)
+        ner_cpu_mbert = TransformersNER(model_name=Config.MBERT_NER_MODEL, logger=logger, preprocessor=None, device=CPU_DEVICE, **NER_PARAMS)
 
-        kw_str = ", ".join(f"{word} ({score:.4f})" for word, score in keywords)
-        kw_count = len(keywords)
-
-        # UPDATED: save keywords_count too
-        db.save_keyword_results(
-            article_id=article_id,
-            keywords=kw_str,
-            keywords_count=kw_count,
+        sent_cpu_arabert = TransformersSentiment(
+            model_name=Config.ARABERT_SENTIMENT_MODEL,
+            logger=logger,
+            preprocessor=None,
+            device=CPU_DEVICE,
+            probs_normalizer=probs_norm_prali22_4class,
+            **SENTIMENT_PARAMS,
+        )
+        sent_cpu_camel = TransformersSentiment(
+            model_name=Config.CAMEL_SENTIMENT_MODEL,
+            logger=logger,
+            preprocessor=None,
+            device=CPU_DEVICE,
+            probs_normalizer=probs_norm_camel_3class,
+            **SENTIMENT_PARAMS,
+        )
+        sent_cpu_mbert = TransformersSentiment(
+            model_name=Config.MBERT_SENTIMENT_MODEL,
+            logger=logger,
+            preprocessor=None,
+            device=CPU_DEVICE,
+            probs_normalizer=probs_norm_nlptown_to_3class,
+            **SENTIMENT_PARAMS,
         )
 
-        logger.info(f"[KW {article_id}] extracted {kw_count} keywords")
+        for r in arabic_df.itertuples(index=False):
+            aid = int(r.id)
 
-    logger.info("Keyword extraction complete: results saved to DB")
+            t0 = time.perf_counter()
+            _ = ner_cpu_arabert.predict(r.text_ner)
+            timing_records.append({"mode": "cpu", "task": "ner", "model_name": "arabert", "article_id": aid, "elapsed_seconds": round(time.perf_counter() - t0, 6)})
 
-    # ============================================================
-    # COMPARISON REPORT (local CSVs in the SAME run_dir)
-    # ============================================================
-    try:
-        generate_comparison_report(run_dir=run_dir, timing_records=timing_records)
-        logger.info("Comparison CSVs generated successfully.")
-    except Exception as e:
-        logger.error(f"Comparison report generation failed: {e}")
+            t0 = time.perf_counter()
+            _ = ner_cpu_camel.predict(r.text_ner)
+            timing_records.append({"mode": "cpu", "task": "ner", "model_name": "camel", "article_id": aid, "elapsed_seconds": round(time.perf_counter() - t0, 6)})
 
-    # ============================================================
-    # DONE
-    # ============================================================
-    pipeline_total = time.perf_counter() - pipeline_t0
-    logger.info(f"Pipeline complete in {pipeline_total:.2f}s")
+            t0 = time.perf_counter()
+            _ = ner_cpu_mbert.predict(r.text_ner)
+            timing_records.append({"mode": "cpu", "task": "ner", "model_name": "mbert", "article_id": aid, "elapsed_seconds": round(time.perf_counter() - t0, 6)})
 
+            t0 = time.perf_counter()
+            _ = sent_cpu_arabert.predict(r.text_sentiment)
+            timing_records.append({"mode": "cpu", "task": "sentiment", "model_name": "arabert", "article_id": aid, "elapsed_seconds": round(time.perf_counter() - t0, 6)})
+
+            t0 = time.perf_counter()
+            _ = sent_cpu_camel.predict(r.text_sentiment)
+            timing_records.append({"mode": "cpu", "task": "sentiment", "model_name": "camel", "article_id": aid, "elapsed_seconds": round(time.perf_counter() - t0, 6)})
+
+            t0 = time.perf_counter()
+            _ = sent_cpu_mbert.predict(r.text_sentiment)
+            timing_records.append({"mode": "cpu", "task": "sentiment", "model_name": "mbert", "article_id": aid, "elapsed_seconds": round(time.perf_counter() - t0, 6)})
+
+        del ner_cpu_arabert, ner_cpu_camel, ner_cpu_mbert
+        del sent_cpu_arabert, sent_cpu_camel, sent_cpu_mbert
+        gc.collect()
+
+    # =========================
+    # GPU PASS (model-by-model) - WRITE RESULTS TO DB, TIME predict() ONLY
+    # =========================
+    if not torch.cuda.is_available():
+        logger.warning("CUDA not available -> GPU pass skipped. (No NER/Sentiment DB results will be written.)")
+    else:
+        logger.info("=== GPU PASS (MODEL-BY-MODEL, WRITE RESULTS TO DB) ===")
+
+        article_ids = [int(x) for x in arabic_df["id"].tolist()]
+
+        # ---- NER GPU ----
+        ner_out = {aid: {"arabert": "", "camel": "", "mbert": ""} for aid in article_ids}
+
+        with torch.inference_mode():
+            for model_key, model_name in NER_MODELS:
+                logger.info(f"[GPU][NER] loading {model_key}: {model_name}")
+                ner = TransformersNER(model_name=model_name, logger=logger, preprocessor=None, device=GPU_DEVICE, **NER_PARAMS)
+
+                for r in arabic_df.itertuples(index=False):
+                    aid = int(r.id)
+                    t0 = time.perf_counter()
+                    ents = ner.predict(r.text_ner)
+                    _cuda_sync_if_needed(GPU_DEVICE)
+                    dt = time.perf_counter() - t0
+
+                    timing_records.append({
+                        "mode": "gpu",
+                        "task": "ner",
+                        "model_name": model_key,
+                        "article_id": aid,
+                        "elapsed_seconds": round(dt, 6),
+                    })
+                    ner_out[aid][model_key] = _format_entities(ents)
+
+                del ner
+                _gpu_cleanup(logger, cooldown_sec=GPU_COOLDOWN_SEC)
+
+        # write NER results to DB (outside timing)
+        for aid in article_ids:
+            db.save_ner_results(
+                article_id=aid,
+                arabert_entities=ner_out[aid]["arabert"],
+                camel_entities=ner_out[aid]["camel"],
+                mbert_entities=ner_out[aid]["mbert"],
+            )
+
+        # ---- Sentiment GPU ----
+        sent_out = {
+            aid: {
+                "arabert_label": None, "arabert_score": None, "arabert_probs": None,
+                "camel_label": None, "camel_score": None, "camel_probs": None,
+                "mbert_label": None, "mbert_score": None, "mbert_probs": None,
+            }
+            for aid in article_ids
+        }
+
+        with torch.inference_mode():
+            for model_key, model_name, normalizer in SENT_MODELS:
+                logger.info(f"[GPU][SENT] loading {model_key}: {model_name}")
+                sent = TransformersSentiment(
+                    model_name=model_name,
+                    logger=logger,
+                    preprocessor=None,
+                    device=GPU_DEVICE,
+                    probs_normalizer=normalizer,
+                    **SENTIMENT_PARAMS,
+                )
+
+                for r in arabic_df.itertuples(index=False):
+                    aid = int(r.id)
+                    t0 = time.perf_counter()
+                    res = sent.predict(r.text_sentiment)
+                    _cuda_sync_if_needed(GPU_DEVICE)
+                    dt = time.perf_counter() - t0
+
+                    timing_records.append({
+                        "mode": "gpu",
+                        "task": "sentiment",
+                        "model_name": model_key,
+                        "article_id": aid,
+                        "elapsed_seconds": round(dt, 6),
+                    })
+
+                    sent_out[aid][f"{model_key}_label"] = res.label
+                    sent_out[aid][f"{model_key}_score"] = round(res.score, 4)
+                    sent_out[aid][f"{model_key}_probs"] = json.dumps(_round_probs(res.probs), ensure_ascii=False)
+
+                del sent
+                _gpu_cleanup(logger, cooldown_sec=GPU_COOLDOWN_SEC)
+
+        # write sentiment results to DB (outside timing)
+        for aid in article_ids:
+            db.save_sentiment_results(
+                article_id=aid,
+                arabert_label=sent_out[aid]["arabert_label"],
+                arabert_score=sent_out[aid]["arabert_score"],
+                arabert_probs=sent_out[aid]["arabert_probs"],
+                camel_label=sent_out[aid]["camel_label"],
+                camel_score=sent_out[aid]["camel_score"],
+                camel_probs=sent_out[aid]["camel_probs"],
+                mbert_label=sent_out[aid]["mbert_label"],
+                mbert_score=sent_out[aid]["mbert_score"],
+                mbert_probs=sent_out[aid]["mbert_probs"],
+            )
+
+    # =========================
+    # COMPARISON REPORT
+    # =========================
+    generate_comparison_report(run_dir=run_dir, timing_records=timing_records)
+
+    total = time.perf_counter() - pipeline_t0
+    logger.info(f"Pipeline complete in {total:.2f}s")
     db.close()
 
 
