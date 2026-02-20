@@ -99,7 +99,7 @@ def main():
     # =========================
     # PARAMETERS
     # =========================
-    sample_size = 100
+    sample_size = 10000
     raw_table = getattr(Config, "RAW_TABLE", "article")
     LANG_THRESHOLD = 0.60
 
@@ -114,7 +114,7 @@ def main():
     # Keywords (CPU once)
     KW_MAX_FEATURES = 1000
     KW_MIN_K = 5
-    KW_MAX_K = 25
+    KW_MAX_K = 15
     KW_REL_THRESHOLD = 0.30
     KW_COVERAGE_TARGET = 0.70
 
@@ -207,7 +207,6 @@ def main():
         SELECT id, body, id_language
         FROM {raw_table}
         WHERE body IS NOT NULL
-          AND LENGTH(body) > 50
           AND id_language = 2
         ORDER BY crawl_date DESC, id DESC
         LIMIT {sample_size}
