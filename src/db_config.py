@@ -6,7 +6,6 @@ import logging
 
 
 class DatabaseConnection:
-
     def __init__(self, logger=None):
         self.logger = logger if logger else logging.getLogger(__name__)
         self.engine = None
@@ -20,13 +19,11 @@ class DatabaseConnection:
                 poolclass=QueuePool,
                 pool_pre_ping=True,
                 pool_recycle=3600,
-                echo=False
+                echo=False,
             )
             with self.engine.connect() as conn:
                 self.logger.info("MySQL connection established successfully.")
-
             self.Session = sessionmaker(bind=self.engine)
-
         except Exception as e:
             self.logger.error(f"MySQL connection error: {e}")
             raise
@@ -45,214 +42,209 @@ class DatabaseConnection:
             raise
 
     # ============================================================
-    # Table Management: Drop + Recreate all 7 result tables
+    # Table Management
     # ============================================================
 
     RESULT_TABLES = [
-        "lang_detection",
-        "preprocess_ner",
-        "preprocess_sentiment",
-        "preprocess_keywords",
-        "ner_results",
-        "sentiment_results",
-        "keyword_results",
+        "article_topics",
+        "article_entities",
+        "entities",
+        "articles_enriched",
     ]
 
     def drop_result_tables(self):
-        """Drop all result tables from previous run."""
         try:
             with self.engine.connect() as conn:
                 for table in self.RESULT_TABLES:
                     conn.execute(text(f"DROP TABLE IF EXISTS {table}"))
                 conn.commit()
-            self.logger.info(f"Dropped {len(self.RESULT_TABLES)} result tables.")
+            self.logger.info(f"Dropped {len(self.RESULT_TABLES)} enriched tables.")
         except Exception as e:
             self.logger.error(f"Error dropping tables: {e}")
             raise
 
     def create_result_tables(self):
-        """Create all 7 result tables fresh."""
+        """
+        Supervisor structure + agreed addition:
+        - article_entities has model_version (0/1/2)
+        No extra columns beyond what we agreed.
+        """
         try:
-            self.logger.info("Creating result tables...")
+            self.logger.info("Creating enriched tables...")
             with self.engine.connect() as conn:
 
-                # 1. Language Detection (1 row per article)
+                # 1) articles_enriched (rows multiplied by 3 via model_version)
                 conn.execute(text("""
-                CREATE TABLE lang_detection (
-                    article_id BIGINT PRIMARY KEY,
-                    predicted_lang VARCHAR(10),
-                    confidence FLOAT,
-                    expected_lang VARCHAR(10),
-                    is_correct BOOLEAN
+                CREATE TABLE articles_enriched (
+                    article_id BIGINT NOT NULL,
+                    model_version TINYINT NOT NULL,  -- 0=arabert, 1=camel, 2=mbert
+
+                    language VARCHAR(10),
+
+                    sentiment_label VARCHAR(10),
+                    sentiment_score FLOAT,
+
+                    dominant_topic VARCHAR(100),
+
+                    processing_time BIGINT,
+
+                    PRIMARY KEY (article_id, model_version),
+                    INDEX idx_lang (language),
+                    INDEX idx_model (model_version)
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
                 """))
 
-                # 2. Preprocessed text for NER (1 row per article)
+                # 2) entities dictionary
                 conn.execute(text("""
-                CREATE TABLE preprocess_ner (
-                    article_id BIGINT PRIMARY KEY,
-                    text_ner LONGTEXT
+                CREATE TABLE entities (
+                    entity_id BIGINT AUTO_INCREMENT PRIMARY KEY,
+                    entity_name VARCHAR(255) NOT NULL,
+                    entity_type VARCHAR(20) NOT NULL,
+                    normalized_name VARCHAR(255) NOT NULL,
+
+                    UNIQUE KEY uq_entity (entity_type, normalized_name),
+                    INDEX idx_type (entity_type),
+                    INDEX idx_norm (normalized_name)
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
                 """))
 
-                # 3. Preprocessed text for Sentiment (1 row per article)
+                # 3) article_entities link (with model_version as number)
                 conn.execute(text("""
-                CREATE TABLE preprocess_sentiment (
-                    article_id BIGINT PRIMARY KEY,
-                    text_sentiment LONGTEXT
+                CREATE TABLE article_entities (
+                    article_id BIGINT NOT NULL,
+                    entity_id BIGINT NOT NULL,
+                    model_version TINYINT NOT NULL,  -- 0=arabert, 1=camel, 2=mbert
+                    confidence_score FLOAT,
+
+                    PRIMARY KEY (article_id, entity_id, model_version),
+                    INDEX idx_article (article_id),
+                    INDEX idx_entity (entity_id),
+                    INDEX idx_model (model_version),
+
+                    CONSTRAINT fk_article_entities_entity
+                      FOREIGN KEY (entity_id) REFERENCES entities(entity_id)
+                      ON DELETE CASCADE
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
                 """))
 
-                # 4. Preprocessed text for Keywords (1 row per article)
+                # 4) article_topics (no rank)
                 conn.execute(text("""
-                CREATE TABLE preprocess_keywords (
-                    article_id BIGINT PRIMARY KEY,
-                    text_keywords LONGTEXT
-                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
-                """))
+                CREATE TABLE article_topics (
+                    article_id BIGINT NOT NULL,
+                    topic_label VARCHAR(100) NOT NULL,
+                    topic_score FLOAT,
 
-                # 5. NER Results (1 row per article, 3 model columns)
-                conn.execute(text("""
-                CREATE TABLE ner_results (
-                    article_id BIGINT PRIMARY KEY,
-                    arabert_entities LONGTEXT,
-                    camel_entities LONGTEXT,
-                    mbert_entities LONGTEXT
-                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
-                """))
-
-                # 6. Sentiment Results (1 row per article, 3 models x 3 columns)
-                conn.execute(text("""
-                CREATE TABLE sentiment_results (
-                    article_id BIGINT PRIMARY KEY,
-                    arabert_label VARCHAR(10),
-                    arabert_score FLOAT,
-                    arabert_probs JSON,
-                    camel_label VARCHAR(10),
-                    camel_score FLOAT,
-                    camel_probs JSON,
-                    mbert_label VARCHAR(10),
-                    mbert_score FLOAT,
-                    mbert_probs JSON
-                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
-                """))
-
-                # 7. Keyword Results (1 row per article)
-                conn.execute(text("""
-                CREATE TABLE keyword_results (
-                    article_id BIGINT PRIMARY KEY,
-                    keywords_count INT,
-                    keywords LONGTEXT
+                    PRIMARY KEY (article_id),
+                    INDEX idx_article (article_id),
+                    INDEX idx_topic (topic_label)
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
                 """))
 
                 conn.commit()
-            self.logger.info("All 7 result tables created successfully.")
+
+            self.logger.info("Enriched tables created successfully.")
         except Exception as e:
             self.logger.error(f"Error creating tables: {e}")
             raise
 
     def init_result_tables(self):
-        """Drop previous results and create fresh tables. Call at start of each run."""
         self.drop_result_tables()
         self.create_result_tables()
 
     # ============================================================
-    # Data Insert Methods
+    # Data Insert / Upsert Methods
     # ============================================================
 
-    def save_lang_detection(self, article_id, predicted_lang, confidence,
-                            expected_lang, is_correct):
+    def upsert_articles_enriched(
+        self,
+        article_id: int,
+        model_version: int,
+        language: str | None = None,
+        sentiment_label: str | None = None,
+        sentiment_score: float | None = None,
+        dominant_topic: str | None = None,
+        processing_time: int | None = None,
+    ):
         sql = """
-            INSERT INTO lang_detection
-                (article_id, predicted_lang, confidence, expected_lang, is_correct)
-            VALUES (:aid, :pred, :conf, :exp, :cor)
-        """
-        self.execute_query(sql, {
-            "aid": article_id,
-            "pred": predicted_lang,
-            "conf": confidence,
-            "exp": expected_lang,
-            "cor": is_correct,
-        })
-
-    def save_preprocess_ner(self, article_id, text_ner):
-        sql = """
-            INSERT INTO preprocess_ner (article_id, text_ner)
-            VALUES (:aid, :txt)
-        """
-        self.execute_query(sql, {"aid": article_id, "txt": text_ner})
-
-    def save_preprocess_sentiment(self, article_id, text_sentiment):
-        sql = """
-            INSERT INTO preprocess_sentiment (article_id, text_sentiment)
-            VALUES (:aid, :txt)
-        """
-        self.execute_query(sql, {"aid": article_id, "txt": text_sentiment})
-
-    def save_preprocess_keywords(self, article_id, text_keywords):
-        sql = """
-            INSERT INTO preprocess_keywords (article_id, text_keywords)
-            VALUES (:aid, :txt)
-        """
-        self.execute_query(sql, {"aid": article_id, "txt": text_keywords})
-
-    def save_ner_results(self, article_id, arabert_entities,
-                         camel_entities, mbert_entities):
-        sql = """
-            INSERT INTO ner_results
-                (article_id, arabert_entities, camel_entities, mbert_entities)
-            VALUES (:aid, :ara, :cam, :mbe)
-        """
-        self.execute_query(sql, {
-            "aid": article_id,
-            "ara": arabert_entities,
-            "cam": camel_entities,
-            "mbe": mbert_entities,
-        })
-
-    def save_sentiment_results(self, article_id,
-                               arabert_label, arabert_score, arabert_probs,
-                               camel_label, camel_score, camel_probs,
-                               mbert_label, mbert_score, mbert_probs):
-        sql = """
-            INSERT INTO sentiment_results
-                (article_id,
-                 arabert_label, arabert_score, arabert_probs,
-                 camel_label, camel_score, camel_probs,
-                 mbert_label, mbert_score, mbert_probs)
-            VALUES (:aid,
-                    :a_lbl, :a_sc, :a_pr,
-                    :c_lbl, :c_sc, :c_pr,
-                    :m_lbl, :m_sc, :m_pr)
-        """
-        self.execute_query(sql, {
-            "aid": article_id,
-            "a_lbl": arabert_label,
-            "a_sc": arabert_score,
-            "a_pr": arabert_probs,
-            "c_lbl": camel_label,
-            "c_sc": camel_score,
-            "c_pr": camel_probs,
-            "m_lbl": mbert_label,
-            "m_sc": mbert_score,
-            "m_pr": mbert_probs,
-        })
-
-    def save_keyword_results(self, article_id, keywords, keywords_count: int):
-        sql = """
-            INSERT INTO keyword_results (article_id, keywords_count, keywords)
-            VALUES (:aid, :kc, :kw)
+        INSERT INTO articles_enriched (
+            article_id, model_version, language,
+            sentiment_label, sentiment_score,
+            dominant_topic, processing_time
+        ) VALUES (
+            :aid, :mv, :lang,
+            :s_lbl, :s_sc,
+            :topic, :ptime
+        )
+        ON DUPLICATE KEY UPDATE
+            language = COALESCE(VALUES(language), language),
+            sentiment_label = COALESCE(VALUES(sentiment_label), sentiment_label),
+            sentiment_score = COALESCE(VALUES(sentiment_score), sentiment_score),
+            dominant_topic = COALESCE(VALUES(dominant_topic), dominant_topic),
+            processing_time = COALESCE(VALUES(processing_time), processing_time)
         """
         self.execute_query(sql, {
             "aid": int(article_id),
-        "kc": int(keywords_count),
-        "kw": keywords,
-    })
+            "mv": int(model_version),
+            "lang": language,
+            "s_lbl": sentiment_label,
+            "s_sc": sentiment_score,
+            "topic": dominant_topic,
+            "ptime": processing_time,
+        })
 
-    # ============================================================
-    # Cleanup
-    # ============================================================
+    def upsert_entity(self, entity_name: str, entity_type: str, normalized_name: str) -> int:
+        sql = """
+        INSERT INTO entities (entity_name, entity_type, normalized_name)
+        VALUES (:name, :typ, :norm)
+        ON DUPLICATE KEY UPDATE
+            entity_name = VALUES(entity_name),
+            entity_id = LAST_INSERT_ID(entity_id)
+        """
+        with self.engine.connect() as conn:
+            conn.execute(text(sql), {"name": entity_name, "typ": entity_type, "norm": normalized_name})
+            res = conn.execute(text("SELECT LAST_INSERT_ID()"))
+            entity_id = int(res.scalar())
+            conn.commit()
+        return entity_id
+
+    def upsert_article_entity(
+        self,
+        article_id: int,
+        entity_id: int,
+        model_version: int,
+        confidence_score: float | None,
+    ):
+        sql = """
+        INSERT INTO article_entities (article_id, entity_id, model_version, confidence_score)
+        VALUES (:aid, :eid, :mv, :conf)
+        ON DUPLICATE KEY UPDATE
+            confidence_score = GREATEST(confidence_score, VALUES(confidence_score))
+        """
+        self.execute_query(sql, {
+            "aid": int(article_id),
+            "eid": int(entity_id),
+            "mv": int(model_version),
+            "conf": float(confidence_score) if confidence_score is not None else None,
+        })
+
+    def upsert_article_topic(
+        self,
+        article_id: int,
+        topic_label: str,
+        topic_score: float | None = None,
+    ):
+        sql = """
+        INSERT INTO article_topics (article_id, topic_label, topic_score)
+        VALUES (:aid, :lab, :sc)
+        ON DUPLICATE KEY UPDATE
+            topic_label = VALUES(topic_label),
+            topic_score = VALUES(topic_score)
+        """
+        self.execute_query(sql, {
+            "aid": int(article_id),
+            "lab": str(topic_label),
+            "sc": float(topic_score) if topic_score is not None else None,
+        })
 
     def close(self):
         if self.engine:

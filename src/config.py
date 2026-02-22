@@ -1,11 +1,3 @@
-# Contains all configuration parameters for the NLP pipeline.
-# Loads environment variables from .env file.
-
-
-
-# src/config.py
-# Centralized configuration for the project.
-# Loads environment variables from the .env located at the project root.
 # NOTE: No static LOG_DIR / EXPORT_DIR creation here (experiments handle output paths dynamically).
 
 import os
@@ -63,14 +55,25 @@ class Config:
     # ========================================
     # NLP Models Configuration
     # ========================================
+    # Arabic (keep)
     ARABERT_NER_MODEL = "hatmimoha/arabic-ner"
     CAMEL_NER_MODEL = "CAMeL-Lab/bert-base-arabic-camelbert-msa-ner"
-    MBERT_NER_MODEL = "Davlan/bert-base-multilingual-cased-ner-hrl"
 
-
+    ARABERT_SENTIMENT_MODEL = "PRAli22/AraBert-Arabic-Sentiment-Analysis"
     CAMEL_SENTIMENT_MODEL = "CAMeL-Lab/bert-base-arabic-camelbert-msa-sentiment"
-    ARABERT_SENTIMENT_MODEL = "PRAli22/AraBert-Arabic-Sentiment-Analysis"  # labels: Positive/Negative/Neutral/Mixed
-    MBERT_SENTIMENT_MODEL = "nlptown/bert-base-multilingual-uncased-sentiment"
+
+    # English 
+    EN_NER_MODEL = "dslim/bert-base-NER"
+    EN_SENTIMENT_MODEL = "cardiffnlp/twitter-roberta-base-sentiment-latest"
+
+    # French 
+    FR_NER_MODEL = "Jean-Baptiste/camembert-ner"
+    FR_SENTIMENT_MODEL = "cardiffnlp/twitter-xlm-roberta-base-sentiment"
+
+
+
+    # Topic Classification 
+    TOPIC_MODEL = "joeddav/xlm-roberta-large-xnli"
 
 
 
@@ -80,57 +83,3 @@ class Config:
     LOG_LEVEL = _getenv("LOG_LEVEL", "INFO")
     LOG_FORMAT = _getenv("LOG_FORMAT", "%(asctime)s - %(levelname)s - %(message)s")
     LOG_DATE_FORMAT = _getenv("LOG_DATE_FORMAT", "%Y-%m-%d %H:%M:%S")
-
-    # ========================================
-    # Arabic Stopwords (keywords)
-    # ========================================
-    ARABIC_STOPWORDS = [
-    "في", "من", "إلى", "الى", "على", "عن", "مع", "بين", "ضد", "حول", "خلال", "منذ", "حتى",
-    "قبل", "بعد", "عند", "لدى", "ضمن", "نحو",
-    "هذا", "هذه", "ذلك", "تلك",
-    "الذي", "التي", "الذين", "اللتان", "اللواتي",
-    "كان", "كانت", "كانوا", "يكون", "تكون", "ليس", "ليست",
-    "قد", "لقد", "ولقد", "لم", "لن", "لا",
-    "أن", "ان", "إن", "لكن", "لأن", "لان",
-    "أو", "او", "أم",
-    "هل", "ما",
-    "كل", "بعض", "أي", "أية",
-    "هنا", "هناك", "حيث", "عندما", "كيف", "لماذا",
-    "نحن", "أنتم", "هم", "هن", "أنا", "أنت", "هو", "هي",
-    "الان", "الآن", "انه", "إنه",
-    "أيضا", "أيضاً",
-    "كذلك",
-    "ربما",
-    "فقط",
-    "جدا", "جداً",
-    "تماما", "تماماً",
-    "فعلا", "فعلاً",
-    "خاصة", "خصوصا", "خصوصاً",
-    "عادة",
-    "بشكل", "بصورة",
-    "قال", "قالت", "وقال", "وقالت", "وقالوا", "فقال", "فقالت",
-    "يقول", "ويقول", "تقول", "وتقول",
-    "ذكر", "وذكر", "يذكر", "ويذكر",
-    "أضاف", "اضاف", "وأضاف", "وأضافت", "وأضافوا", "واضاف",
-    "أوضح", "اوضح", "وأوضح", "واوضح",
-    "أكد", "اكد", "وأكد", "واكد",
-    "أفاد", "افاد", "وأفاد", "وافاد",
-    "أشار", "اشار", "وأشار", "واشار",
-    "تابع", "وتابع",
-    "شدد", "وشدد",
-    "صرح", "وصرح",
-    "اعتبر", "واعتبر",
-    "نفى", "ونفى",
-    "أعرب", "اعرب", "وأعرب", "واعرب",
-    "نوه", "ونوه",
-    "لفت", "ولفت",
-    "بحسب", "وبحسب",
-    "حسب", "وحسب",
-    "وفقا", "وفقاً", "ووفقا", "ووفقاً",
-    "وذلك", "وبذلك",
-    "لذلك", "ولهذا", "لهذا",
-    "اليوم", "أمس", "امس", "غدا", "غداً", "البارحة", "الليلة",
-    "صباحا", "صباحاً", "مساء", "مساءً", "مساءا",
-    "الاثنين", "الإثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت", "الأحد",
-    "تم", "يتم", "وسيتم", "سيتم",
-]

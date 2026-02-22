@@ -1,4 +1,4 @@
-# comparison/report_generator.py ///////////// this version is misssing the BERTopic
+# comparison/report_generator.py
 """
 Generate model comparison outputs as CSV files.
 
@@ -6,8 +6,7 @@ Outputs (in one folder):
 - comparison.log
 - ner_comparison.csv
 - sentiment_comparison.csv
-- keyword_comparison.csv
-- timing_comparison.csv   (only if timing_records provided)
+- timing_comparison.csv          (only if timing_records provided)
 
 IMPORTANT:
 - If run_dir is provided, results are written into that existing folder.
@@ -26,7 +25,6 @@ from src.db_config import DatabaseConnection
 
 from comparison.ner_comparison import run_ner_comparison
 from comparison.sentiment_comparison import run_sentiment_comparison
-from comparison.keyword_comparison import run_keyword_comparison
 from comparison.timing_comparison import run_timing_comparison
 
 
@@ -53,7 +51,6 @@ def generate_comparison_report(
     run_dir: Optional[Union[str, Path]] = None,
     results_root: Union[str, Path] = "results",
     timing_records: Optional[List[Dict[str, Any]]] = None,
-    keywords_top_n: int = 30,
 ) -> Path:
     """
     Generate comparison CSVs by reading pipeline outputs from MySQL tables.
@@ -63,10 +60,7 @@ def generate_comparison_report(
             - If provided: write all comparison outputs inside this folder.
             - If None: create a new timestamped folder under results_root.
         results_root: base folder used only when run_dir is None.
-        timing_records: list of timing dicts collected during pipeline execution:
-            [{"article_id":..., "task":"ner|sentiment|keywords", "model_name":"arabert|camel|mbert|tfidf",
-              "elapsed_seconds":...}, ...]
-        keywords_top_n: number of top keywords to include in keyword_comparison.csv
+        timing_records: list of timing dicts collected during pipeline execution.
 
     Returns:
         Path to the folder that contains the comparison outputs.
@@ -105,21 +99,16 @@ def generate_comparison_report(
     except Exception as e:
         logger.exception(f"Sentiment comparison failed: {e}")
 
-    # ---- Keywords ----
-    try:
-        logger.info("Running keyword comparison...")
-        kw_df = run_keyword_comparison(engine, top_n=keywords_top_n)
-        kw_path = run_dir / "keyword_comparison.csv"
-        kw_df.to_csv(kw_path, index=False, encoding="utf-8-sig")
-        logger.info(f"Saved: {kw_path}")
-    except Exception as e:
-        logger.exception(f"Keyword comparison failed: {e}")
-
     # ---- Timing (local only) ----
     if timing_records is not None:
         try:
             logger.info("Running timing comparison...")
             timing_df = run_timing_comparison(timing_records)
+
+            # Keep only the relevant tasks (ner, sentiment, topic)
+            if not timing_df.empty and "task" in timing_df.columns:
+                timing_df = timing_df[timing_df["task"].isin(["ner", "sentiment", "topic"])].copy()
+
             timing_path = run_dir / "timing_comparison.csv"
             timing_df.to_csv(timing_path, index=False, encoding="utf-8-sig")
             logger.info(f"Saved: {timing_path}")
@@ -134,5 +123,5 @@ def generate_comparison_report(
 
 
 if __name__ == "__main__":
-    # Standalone usage: creates results/<timestamp>/ and writes the DB-based comparisons there.
+    # Standalone usage
     generate_comparison_report()

@@ -4,6 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import List, Dict, Optional, Any, Tuple
 import logging
+
 import torch
 from transformers import AutoTokenizer, AutoModelForTokenClassification, pipeline
 
@@ -11,7 +12,7 @@ from transformers import AutoTokenizer, AutoModelForTokenClassification, pipelin
 DEFAULT_MODEL_REGISTRY: Dict[int, str] = {
     0: "arabert",
     1: "camel",
-    2: "mbert",
+    # 2 removed (mbert removed from the project)
 }
 
 
@@ -27,20 +28,134 @@ DEFAULT_NER_PARAMS: Dict[str, Any] = {
     "expand_max_len": 3,
 }
 
-
-# Unified label mapping: any label → first 3 letters uppercased
+# Unified label mapping to your internal codes:
+# PER, ORG, LOC, DAT, EVE, MIS, PRO, COM
 LABEL_UNIFICATION = {
+    # --------------------
+    # PERSON
+    # --------------------
     "PERSON": "PER",
-    "PERS": "PER",
     "PER": "PER",
+    "PERS": "PER",
+    "HUMAN": "PER",
+    "INDIVIDUAL": "PER",
+    "PER.": "PER",
+    "PERS.": "PER",
+    "PERSONS": "PER",
+    "PEOPLE": "PER",
+    "B-PER": "PER",
+    "I-PER": "PER",
+    "B-PERS": "PER",
+    "I-PERS": "PER",
+    "B-PERSON": "PER",
+    "I-PERSON": "PER",
+    "B-PERSONS": "PER",
+    "I-PERSONS": "PER",
+
+    # Some NER models use PERSON as PERSON (already handled), or PER (handled)
+
+    # --------------------
+    # ORGANIZATION
+    # --------------------
+    "ORGANIZATION": "ORG",
+    "ORGANISATION": "ORG",
+    "ORG": "ORG",
+    "COMPANY": "ORG",
+    "INSTITUTION": "ORG",
+    "AGENCY": "ORG",
+    "UNIVERSITY": "ORG",
+    "MINISTRY": "ORG",
+    "GOV": "ORG",
+    "GOVERNMENT": "ORG",
+    "B-ORG": "ORG",
+    "I-ORG": "ORG",
+    "B-ORGANIZATION": "ORG",
+    "I-ORGANIZATION": "ORG",
+    "B-ORGANISATION": "ORG",
+    "I-ORGANISATION": "ORG",
+
+    # --------------------
+    # LOCATION
+    # --------------------
     "LOCATION": "LOC",
     "LOC": "LOC",
-    "ORGANIZATION": "ORG",
-    "ORG": "ORG",
+    "GPE": "LOC",
+    "CITY": "LOC",
+    "COUNTRY": "LOC",
+    "REGION": "LOC",
+    "STATE": "LOC",
+    "PROVINCE": "LOC",
+    "B-LOC": "LOC",
+    "I-LOC": "LOC",
+    "B-LOCATION": "LOC",
+    "I-LOCATION": "LOC",
+    "B-GPE": "LOC",
+    "I-GPE": "LOC",
+
+    # Facilities often treated as location in your setup
+    "FAC": "LOC",
+    "FACILITY": "LOC",
+    "B-FAC": "LOC",
+    "I-FAC": "LOC",
+    "B-FACILITY": "LOC",
+    "I-FACILITY": "LOC",
+
+    # --------------------
+    # DATE / TIME
+    # --------------------
+    "DATE": "DAT",
+    "DAT": "DAT",
+    "TIME": "DAT",
+    "TIM": "DAT",
+    "DATETIME": "DAT",
+    "B-DATE": "DAT",
+    "I-DATE": "DAT",
+    "B-TIME": "DAT",
+    "I-TIME": "DAT",
+    "B-DATETIME": "DAT",
+    "I-DATETIME": "DAT",
+
+    # --------------------
+    # EVENT
+    # --------------------
     "EVENT": "EVE",
     "EVE": "EVE",
-    "MISCELLANEOUS": "MIS",
+    "B-EVENT": "EVE",
+    "I-EVENT": "EVE",
+
+    # --------------------
+    # MISC (catch-all)
+    # --------------------
     "MISC": "MIS",
+    "MIS": "MIS",
+    "MISCELLANEOUS": "MIS",
+    "OTHER": "MIS",
+    "OTH": "MIS",
+    "B-MISC": "MIS",
+    "I-MISC": "MIS",
+
+    # --------------------
+    # PRODUCT (AraBERT sometimes has it)
+    # --------------------
+    "PRODUCT": "PRO",
+    "PRO": "PRO",
+    "B-PRODUCT": "PRO",
+    "I-PRODUCT": "PRO",
+    "BRAND": "PRO",
+    "APP": "PRO",
+    "SOFTWARE": "PRO",
+    "PLATFORM": "PRO",
+
+    # --------------------
+    # COMPETITION / SPORT LEAGUE (AraBERT sometimes has it)
+    # --------------------
+    "COMPETITION": "COM",
+    "COM": "COM",
+    "LEAGUE": "COM",
+    "TOURNAMENT": "COM",
+    "CHAMPIONSHIP": "COM",
+    "B-COMPETITION": "COM",
+    "I-COMPETITION": "COM",
 }
 
 
@@ -55,14 +170,14 @@ class NEREntity:
 
 class TransformersNER:
     """
-    Robust NER extractor (AraBERT / CAMeL / mBERT-NER) with:
-    - token-based chunking (offset_mapping) to avoid 512-token crash
+    Robust NER extractor with:
+    - token-based chunking (offset_mapping)
     - score filtering
     - short/noise filtering
-    - word-boundary expansion for short entities to reduce fragments
-    - merge adjacent entities (safe punctuation gaps) WITHOUT merging overlaps/duplicates
-    - deduplication because of overlap (done BEFORE merge to avoid duplicated texts)
-    - unified labels: all labels mapped to 3-letter codes (PER, LOC, ORG, EVE, MIS)
+    - word-boundary expansion for short entities
+    - merge adjacent entities
+    - deduplication
+    - label unification (PER/ORG/LOC/DAT/EVE/MIS/PRO/COM)
     """
 
     _MERGE_GAP_ALLOWED_CHARS = set(" \t\r\n" + ".,،؛:!?-–—ـ/\\()[]{}\"'")
@@ -133,10 +248,30 @@ class TransformersNER:
 
     @staticmethod
     def _normalize_label(label: str) -> str:
-        """Unify label to 3-letter code. Unknown labels → first 3 letters uppercased."""
+        """
+        Unify label to internal code. Handles:
+        - raw labels like 'PERSON', 'ORG', 'LOCATION', ...
+        - BIO labels like 'B-PER', 'I-ORG'
+        """
         raw = (label or "UNK").upper().strip()
+
+        # Normalize common BIO prefixes (defensive)
+        # If label comes like "B-PERSON" or "I-ORG", we keep it as-is for mapping
+        # but also try the stripped version if not found.
         if raw in LABEL_UNIFICATION:
             return LABEL_UNIFICATION[raw]
+
+        # Try removing BIO prefix if present
+        if raw.startswith("B-") or raw.startswith("I-"):
+            stripped = raw[2:]
+            if stripped in LABEL_UNIFICATION:
+                return LABEL_UNIFICATION[stripped]
+            raw = stripped
+
+        # Final attempt
+        if raw in LABEL_UNIFICATION:
+            return LABEL_UNIFICATION[raw]
+
         # Fallback: first 3 letters
         return raw[:3] if len(raw) >= 3 else raw
 

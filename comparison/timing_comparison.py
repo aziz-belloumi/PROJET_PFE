@@ -2,9 +2,10 @@
 """
 Timing comparison — receives timing records collected during pipeline execution.
 
-Updated for CPU vs GPU benchmarking:
-- Expects each timing record to include a "mode" field: "cpu" or "gpu"
-- Produces one row per (task, model_name) with CPU stats, GPU stats, and speedup.
+UPDATED (new schema):
+- timing_records contain: mode, task, model_version, article_id, elapsed_seconds
+- Produces one row per (task, model_version) with CPU stats, GPU stats, and speedup.
+- Adds model_name for readability (0=arabert, 1=camel, 2=mbert, -1=topic/other).
 
 Timing must represent prediction time only (no MySQL write time).
 """
@@ -13,6 +14,13 @@ import logging
 import pandas as pd
 
 logger = logging.getLogger(__name__)
+
+MODEL_NAME_MAP = {
+    -1: "topic",
+    0: "arabert",
+    1: "camel",
+    2: "mbert",
+}
 
 
 def _stats(group: pd.Series) -> dict:
@@ -30,13 +38,13 @@ def run_timing_comparison(timing_records):
     Args:
         timing_records: list[dict] with keys:
             - mode: "cpu" or "gpu" (if missing -> defaults to "cpu")
-            - task: "ner" / "sentiment" / "keywords" (etc.)
-            - model_name: "arabert" / "camel" / "mbert" / "tfidf" ...
+            - task: "ner" / "sentiment" / "topic" (etc.)
+            - model_version: int (0/1/2) or -1 for non-3-model tasks like topic
             - elapsed_seconds: float
             - (optional) article_id
 
     Returns DataFrame with columns:
-        task, model_name,
+        task, model_version, model_name,
         cpu_total_seconds, cpu_mean_per_article, cpu_std_per_article, cpu_min_per_article, cpu_max_per_article,
         gpu_total_seconds, gpu_mean_per_article, gpu_std_per_article, gpu_min_per_article, gpu_max_per_article,
         speedup_cpu_over_gpu
@@ -44,7 +52,7 @@ def run_timing_comparison(timing_records):
     if not timing_records:
         logger.warning("No timing records provided.")
         return pd.DataFrame(columns=[
-            "task", "model_name",
+            "task", "model_version", "model_name",
             "cpu_total_seconds", "cpu_mean_per_article", "cpu_std_per_article", "cpu_min_per_article", "cpu_max_per_article",
             "gpu_total_seconds", "gpu_mean_per_article", "gpu_std_per_article", "gpu_min_per_article", "gpu_max_per_article",
             "speedup_cpu_over_gpu",
@@ -57,26 +65,34 @@ def run_timing_comparison(timing_records):
     if "mode" not in df.columns:
         df["mode"] = "cpu"
 
+    # REQUIRED new field: model_version
+    if "model_version" not in df.columns:
+        raise KeyError("timing_records must include 'model_version' (new pipeline format).")
+
     # Normalize
     df["mode"] = df["mode"].astype(str).str.lower().str.strip()
     df["task"] = df["task"].astype(str).str.lower().str.strip()
-    df["model_name"] = df["model_name"].astype(str).str.lower().str.strip()
+    df["model_version"] = pd.to_numeric(df["model_version"], errors="coerce")
     df["elapsed_seconds"] = pd.to_numeric(df["elapsed_seconds"], errors="coerce")
-    df = df.dropna(subset=["mode", "task", "model_name", "elapsed_seconds"])
+    df = df.dropna(subset=["mode", "task", "model_version", "elapsed_seconds"])
 
     if df.empty:
         logger.warning("Timing records are empty after cleaning.")
         return pd.DataFrame()
 
-    # Aggregate per (mode, task, model)
+    df["model_version"] = df["model_version"].astype(int)
+    df["model_name"] = df["model_version"].map(MODEL_NAME_MAP).fillna("unknown")
+
+    # Aggregate per (mode, task, model_version)
     agg_rows = []
-    for (mode, task, model), g in df.groupby(["mode", "task", "model_name"]):
+    for (mode, task, mv), g in df.groupby(["mode", "task", "model_version"], dropna=False):
         s = g["elapsed_seconds"]
         stats = _stats(s)
         agg_rows.append({
             "mode": mode,
             "task": task,
-            "model_name": model,
+            "model_version": int(mv),
+            "model_name": MODEL_NAME_MAP.get(int(mv), "unknown"),
             **stats,
         })
 
@@ -101,7 +117,11 @@ def run_timing_comparison(timing_records):
         "max_per_article": "gpu_max_per_article",
     })
 
-    result = pd.merge(cpu, gpu, on=["task", "model_name"], how="outer")
+    result = pd.merge(
+        cpu, gpu,
+        on=["task", "model_version", "model_name"],
+        how="outer",
+    )
 
     # Speedup (based on mean per article)
     def _speedup(row):
@@ -114,7 +134,7 @@ def run_timing_comparison(timing_records):
     result["speedup_cpu_over_gpu"] = result.apply(_speedup, axis=1)
 
     # Sort output
-    result = result.sort_values(["task", "model_name"]).reset_index(drop=True)
+    result = result.sort_values(["task", "model_version"]).reset_index(drop=True)
 
     logger.info(f"\n=== TIMING COMPARISON (CPU vs GPU) ===\n{result.to_string(index=False)}")
     return result

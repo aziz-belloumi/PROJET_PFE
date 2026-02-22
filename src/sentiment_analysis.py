@@ -19,26 +19,22 @@ DEFAULT_SENTIMENT_PARAMS: Dict[str, Any] = {
 
 @dataclass
 class SentimentResult:
-    label: str                 # predicted label (argmax of normalized probs)
-    score: float               # probability of that label
-    probs: Dict[str, float]    # normalized probs (AraBERT: POS/NEG/NEU/MIX ; others: POS/NEG/NEU)
+    label: str
+    score: float
+    probs: Dict[str, float]
 
 
 class TransformersSentiment:
     """
     Sentiment classifier with token-based chunking + aggregation.
-
-    You provide probs_normalizer to standardize keys:
-    - AraBERT PRali22: POS/NEG/NEU/MIX
-    - CAMeL: POS/NEG/NEU
-    - mBERT nlptown stars: POS/NEG/NEU
+    probs_normalizer standardizes label keys to POS/NEG/NEU[/MIX].
     """
 
     def __init__(
         self,
         model_name: str,
         logger: Optional[logging.Logger] = None,
-        preprocessor=None,  # callable OR object with preprocess_for_sentiment/preprocess_for_ner/preprocess
+        preprocessor=None,
         device: Optional[int] = None,
         max_chunk_tokens: int = DEFAULT_SENTIMENT_PARAMS["max_chunk_tokens"],
         overlap_tokens: int = DEFAULT_SENTIMENT_PARAMS["overlap_tokens"],
@@ -52,7 +48,6 @@ class TransformersSentiment:
         self.max_chunk_tokens = int(max_chunk_tokens)
         self.overlap_tokens = int(overlap_tokens)
         self.aggregation = str(aggregation)
-
         self.probs_normalizer = probs_normalizer
 
         if device is None:
@@ -149,7 +144,6 @@ class TransformersSentiment:
         if not chunks:
             return SentimentResult(label="UNK", score=0.0, probs={})
 
-        # ---- aggregate raw probs ----
         if self.aggregation == "mean_probs":
             probs_sum: Dict[str, float] = {}
             weight_sum = 0.0
@@ -182,9 +176,7 @@ class TransformersSentiment:
         else:
             raise ValueError(f"Unknown aggregation mode: {self.aggregation}")
 
-        # ---- normalize probs keys ----
         probs_norm = self.probs_normalizer(raw_probs) if self.probs_normalizer else raw_probs
-
         label, score = self._argmax(probs_norm)
         return SentimentResult(label=label, score=score, probs=probs_norm)
 
@@ -204,8 +196,16 @@ def probs_norm_prali22_4class(raw_probs: Dict[str, float]) -> Dict[str, float]:
     }
 
 
-def probs_norm_camel_3class(raw_probs: Dict[str, float]) -> Dict[str, float]:
-    """CAMeL labels: positive/negative/neutral -> POS/NEG/NEU"""
+def probs_norm_3class_posnegneu(raw_probs: Dict[str, float]) -> Dict[str, float]:
+    """
+    Generic 3-class mapping:
+      positive/negative/neutral -> POS/NEG/NEU
+
+    Works for:
+    - CAMeL 3-class sentiment
+    - CardiffNLP twitter-roberta-base-sentiment-latest
+    - CardiffNLP twitter-xlm-roberta-base-sentiment-latest
+    """
     p = {k.strip().lower(): float(v) for k, v in raw_probs.items()}
     return {
         "POS": p.get("positive", 0.0),
@@ -214,8 +214,13 @@ def probs_norm_camel_3class(raw_probs: Dict[str, float]) -> Dict[str, float]:
     }
 
 
+# Backward-compatible alias (your main may still import this name)
+def probs_norm_camel_3class(raw_probs: Dict[str, float]) -> Dict[str, float]:
+    return probs_norm_3class_posnegneu(raw_probs)
+
+
+# Keep only if you still use nlptown/mBERT somewhere; otherwise remove later.
 def probs_norm_nlptown_to_3class(raw_probs: Dict[str, float]) -> Dict[str, float]:
-    """nlptown labels: 1..5 stars -> POS/NEG/NEU"""
     p = {k.strip().lower(): float(v) for k, v in raw_probs.items()}
 
     def get_star(n: int) -> float:

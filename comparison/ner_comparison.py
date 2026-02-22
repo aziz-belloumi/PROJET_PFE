@@ -1,104 +1,115 @@
-import re
 import logging
-from collections import Counter
-
 import pandas as pd
-
 
 logger = logging.getLogger(__name__)
 
-ENTITY_PATTERN = re.compile(r"([^,]+?)\s*\(([A-Z]{3}),\s*([\d.]+)\)")
+# Your DB labels are already unified in src/ner_extraction.py
+ALL_LABELS = ["PER", "ORG", "LOC", "DAT", "EVE", "MIS", "PRO", "COM"]
 
-MODEL_COLUMNS = {
-    "arabert": "arabert_entities",
-    "camel": "camel_entities",
-    "mbert": "mbert_entities",
+MODEL_NAME_MAP = {
+    0: "arabert",
+    1: "camel",
+    2: "mbert",
 }
-
-ALL_LABELS = ["PER", "LOC", "ORG", "EVE", "MIS"]
-
-
-def _parse_entities(entity_string):
-    """Parse 'text (LBL, 0.94), text (LBL, 0.87)' into list of dicts."""
-    if not entity_string or pd.isna(entity_string):
-        return []
-    results = []
-    for match in ENTITY_PATTERN.finditer(entity_string):
-        results.append({
-            "text": match.group(1).strip(),
-            "label": match.group(2),
-            "score": float(match.group(3)),
-        })
-    return results
 
 
 def run_ner_comparison(engine):
+    query = """
+        SELECT
+            ae.article_id,
+            ae.model_version,
+            ae.confidence_score,
+            e.entity_type,
+            e.normalized_name
+        FROM article_entities ae
+        JOIN entities e ON ae.entity_id = e.entity_id
+    """
+    df = pd.read_sql(query, engine)
+    logger.info(f"Loaded {len(df)} entity records from DB")
 
-    df = pd.read_sql("SELECT * FROM ner_results", engine)
-    logger.info(f"Loaded {len(df)} rows from ner_results")
+    if df.empty:
+        logger.warning("No NER entities found in DB.")
+        return pd.DataFrame()
 
-    model_names = list(MODEL_COLUMNS.keys())
+    # Normalize
+    df["model_version"] = pd.to_numeric(df["model_version"], errors="coerce")
+    df["confidence_score"] = pd.to_numeric(df["confidence_score"], errors="coerce")
+    df["entity_type"] = df["entity_type"].astype(str).str.upper().str.strip()
+    df["normalized_name"] = df["normalized_name"].astype(str).str.strip()
 
-    # Pre-parse all entities
-    parsed = {}
-    for model, col in MODEL_COLUMNS.items():
-        parsed[model] = [_parse_entities(val) for val in df[col]]
+    df = df.dropna(subset=["article_id", "model_version", "entity_type", "normalized_name"])
+    if df.empty:
+        logger.warning("NER records empty after cleaning.")
+        return pd.DataFrame()
+
+    df["model_version"] = df["model_version"].astype(int)
+    df["model"] = df["model_version"].map(MODEL_NAME_MAP).fillna("unknown")
+
+    # Pre-aggregate sets for agreement/uniqueness calculation
+    # dict: mv -> set of (article_id, normalized_name, entity_type)
+    model_sets: dict[int, set[tuple]] = {}
+    for mv in sorted(df["model_version"].unique()):
+        subset = df[df["model_version"] == mv][["article_id", "normalized_name", "entity_type"]]
+        model_sets[int(mv)] = set(subset.itertuples(index=False, name=None))
 
     rows = []
-    for model in model_names:
-        ents_per_article = parsed[model]
 
-        # Counts
-        counts = [len(e) for e in ents_per_article]
-        count_series = pd.Series(counts) if counts else pd.Series([0])
+    for mv in sorted(df["model_version"].unique()):
+        subset = df[df["model_version"] == mv]
+        n_entities = len(subset)
 
-        # All scores and labels flattened
-        all_scores = [ent["score"] for article in ents_per_article for ent in article]
-        all_labels = [ent["label"] for article in ents_per_article for ent in article]
-        score_series = pd.Series(all_scores) if all_scores else pd.Series([0.0])
-        label_counts = Counter(all_labels)
+        model_name = MODEL_NAME_MAP.get(int(mv), "unknown")
 
-        # Agreement: % of my entities also found by at least one other model
-        others = [m for m in model_names if m != model]
-        total_mine = 0
-        total_agreed = 0
-        for i in range(len(df)):
-            my_set = {(e["text"], e["label"]) for e in ents_per_article[i]}
-            others_set = set()
-            for o in others:
-                others_set |= {(e["text"], e["label"]) for e in parsed[o][i]}
-            total_mine += len(my_set)
-            total_agreed += len(my_set & others_set)
-        agreement_pct = round(100 * total_agreed / total_mine, 2) if total_mine > 0 else 0
+        if n_entities == 0:
+            rows.append({"model_version": int(mv), "model": model_name, "total_entities": 0})
+            continue
 
-        # Unique: entities found only by this model
-        total_unique = 0
-        for i in range(len(df)):
-            my_set = {(e["text"], e["label"]) for e in ents_per_article[i]}
-            others_set = set()
-            for o in others:
-                others_set |= {(e["text"], e["label"]) for e in parsed[o][i]}
-            total_unique += len(my_set - others_set)
+        # Per-article stats
+        counts_per_article = subset.groupby("article_id").size()
+        mean_per = float(counts_per_article.mean()) if not counts_per_article.empty else 0.0
+        std_per = float(counts_per_article.std()) if len(counts_per_article) > 1 else 0.0
 
-        # Build row
+        # Label counts
+        label_counts = subset["entity_type"].value_counts()
+
+        # Confidence stats
+        scores = subset["confidence_score"].dropna()
+
+        # Agreement / unique
+        my_set = model_sets.get(int(mv), set())
+        others_set = set()
+        for other_mv, s in model_sets.items():
+            if other_mv != int(mv):
+                others_set.update(s)
+
+        intersection = my_set.intersection(others_set)
+        unique_to_me = my_set - others_set
+
+        agreement_pct = (len(intersection) / len(my_set)) * 100 if len(my_set) > 0 else 0.0
+
         row = {
-            "model": model,
-            "total_entities": int(sum(counts)),
-            "mean_per_article": round(count_series.mean(), 2),
-            "std_per_article": round(count_series.std(), 2),
+            "model_version": int(mv),
+            "model": model_name,
+            "total_entities": int(n_entities),
+            "mean_per_article": round(mean_per, 2),
+            "std_per_article": round(std_per, 2),
         }
+
         for lbl in ALL_LABELS:
-            row[f"{lbl}_count"] = label_counts.get(lbl, 0)
+            row[f"{lbl}_count"] = int(label_counts.get(lbl, 0))
+
         row.update({
-            "mean_confidence": round(score_series.mean(), 4),
-            "std_confidence": round(score_series.std(), 4),
-            "min_confidence": round(score_series.min(), 4),
-            "median_confidence": round(score_series.median(), 4),
-            "agreement_pct": agreement_pct,
-            "unique_entities": total_unique,
+            "mean_confidence": round(float(scores.mean()), 4) if not scores.empty else 0.0,
+            "std_confidence": round(float(scores.std()), 4) if len(scores) > 1 else 0.0,
+            "min_confidence": round(float(scores.min()), 4) if not scores.empty else 0.0,
+            "median_confidence": round(float(scores.median()), 4) if not scores.empty else 0.0,
+            "max_confidence": round(float(scores.max()), 4) if not scores.empty else 0.0,
+            "agreement_pct": round(float(agreement_pct), 2),
+            "unique_entities": int(len(unique_to_me)),
         })
+
         rows.append(row)
 
-    result = pd.DataFrame(rows)
-    logger.info(f"\n=== NER COMPARISON ===\n{result.to_string(index=False)}")
+    result = pd.DataFrame(rows).sort_values("model_version").reset_index(drop=True)
+    logger.info(f"\n=== NER COMPARISON (LONG FORMAT) ===\n{result.to_string(index=False)}")
     return result
