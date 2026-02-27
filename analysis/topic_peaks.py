@@ -5,6 +5,8 @@ import pandas as pd
 
 logger = logging.getLogger(__name__)
 
+YEAR_MONTH_FMT = "%Y-%m"  # display format (no day)
+
 
 def topic_peaks(
     topics_by_month_df: pd.DataFrame,
@@ -17,18 +19,13 @@ def topic_peaks(
     Detect abnormal peaks in GLOBAL topic frequency time series (no country, no language).
 
     Expected input columns (from topics_by_month()):
-      - year_month (datetime-like or str)
+      - year_month ("YYYY-MM" or datetime)
       - topic_label
       - articles_count
       - total_articles_in_month
       - topic_share
 
-    Method:
-      - Build a complete monthly timeline between min and max available months
-      - For each topic: fill missing months with 0
-      - Compute rolling mean/std on topic_share
-      - z = (share - mean) / std
-      - Flag peaks when z >= z_threshold and total_articles_in_month >= min_articles_in_month
+    Output year_month is formatted as "YYYY-MM" (no day).
     """
 
     df = topics_by_month_df.copy()
@@ -52,12 +49,16 @@ def topic_peaks(
     if df.empty:
         return pd.DataFrame()
 
-    # Ensure month-start timestamps
+    # Ensure month-start timestamps (internal)
     df["year_month"] = df["year_month"].dt.to_period("M").dt.to_timestamp()
 
-    # Log available range
+    # Log available range (no filtering)
     all_months = df["year_month"].dropna()
-    logger.info(f"[topic_peaks] available_date_range: {all_months.min().date()} -> {all_months.max().date()}")
+    if not all_months.empty:
+        logger.info(
+            f"[topic_peaks] available_date_range: "
+            f"{all_months.min().strftime(YEAR_MONTH_FMT)} -> {all_months.max().strftime(YEAR_MONTH_FMT)}"
+        )
 
     # ---------------------------------------------------------
     # Step 1: create full monthly calendar
@@ -74,7 +75,7 @@ def topic_peaks(
         df.groupby("year_month", as_index=False)
           .agg(total_articles_in_month=("total_articles_in_month", "max"))
     )
-    # Merge totals onto calendar, fill missing with 0
+
     totals_full = calendar.merge(totals, on="year_month", how="left")
     totals_full["total_articles_in_month"] = (
         pd.to_numeric(totals_full["total_articles_in_month"], errors="coerce")
@@ -86,7 +87,7 @@ def topic_peaks(
     # Step 2: build topic-month series on full calendar
     # ---------------------------------------------------------
     topic_keys = df[["topic_label"]].drop_duplicates()
-    topic_calendar = topic_keys.merge(calendar, how="cross")  # cartesian: all topics x all months
+    topic_calendar = topic_keys.merge(calendar, how="cross")  # all topics x all months
 
     topic_full = topic_calendar.merge(
         df[["year_month", "topic_label", "articles_count"]],
@@ -142,6 +143,9 @@ def topic_peaks(
         "z_score",
     ]
     peaks = peaks[cols].sort_values(["z_score", "year_month"], ascending=[False, True]).reset_index(drop=True)
+
+    # FINAL DISPLAY: remove day notation
+    peaks["year_month"] = pd.to_datetime(peaks["year_month"], errors="coerce").dt.strftime(YEAR_MONTH_FMT)
 
     logger.info(f"[topic_peaks] Peaks found: {len(peaks)}")
     return peaks

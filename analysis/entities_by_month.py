@@ -7,11 +7,15 @@ import pandas as pd
 
 logger = logging.getLogger(__name__)
 
+YEAR_MONTH_FMT = "%Y-%m"  # display format (no day)
+
 
 def _to_year_month(crawl_date_val, year_val=None, month_val=None) -> Optional[pd.Timestamp]:
     """
-    Primary: crawl_date -> YYYY-MM-01
-    Fallback: (year, month) -> YYYY-MM-01 if crawl_date missing/invalid
+    Internal month bucket.
+
+    We keep a real datetime internally (Timestamp), so we use day=1 as a standard
+    month-start anchor. We later FORMAT it to "YYYY-MM" before returning/exporting.
     """
     cd = pd.to_datetime(crawl_date_val, errors="coerce")
     if not pd.isna(cd):
@@ -43,9 +47,11 @@ def entities_by_month(
     Output is TOP-K per (year_month) to keep the CSV usable.
 
     Ranking metric:
-      1) distinct_articles_count (DESC)  [#distinct articles mentioning the entity]
-      2) mentions_count (DESC)           [raw extracted mentions across models]
+      1) distinct_articles_count (DESC)
+      2) mentions_count (DESC)
       3) mean_confidence (DESC)
+
+    Output year_month is formatted as "YYYY-MM" (no day).
     """
 
     query = f"""
@@ -81,7 +87,7 @@ def entities_by_month(
     if df.empty:
         return pd.DataFrame()
 
-    # Compute year_month (crawl_date first)
+    # Compute year_month (internal month-start Timestamp)
     df["year_month"] = df.apply(
         lambda r: _to_year_month(r.get("crawl_date"), r.get("year"), r.get("month")),
         axis=1,
@@ -90,23 +96,21 @@ def entities_by_month(
     if df.empty:
         return pd.DataFrame()
 
-    # Log available date range (no filtering)
+    # Log available date range (no filtering) — formatted as YYYY-MM
     ym = pd.to_datetime(df["year_month"], errors="coerce").dropna()
     if not ym.empty:
-        logger.info(f"[entities_by_month] available_date_range: {ym.min().date()} -> {ym.max().date()}")
+        logger.info(
+            f"[entities_by_month] available_date_range: "
+            f"{ym.min().strftime(YEAR_MONTH_FMT)} -> {ym.max().strftime(YEAR_MONTH_FMT)}"
+        )
 
-    # -------------------------
     # mentions_count (raw) per month/entity key
-    # -------------------------
     raw_mentions = (
         df.groupby(["year_month", "entity_type", "normalized_name"], as_index=False)
           .agg(mentions_count=("article_id", "size"))
     )
 
-    # -------------------------
     # deduplicate per article entity key (across models)
-    # keep max confidence for that entity within the article
-    # -------------------------
     per_article = (
         df.groupby(
             ["year_month", "article_id", "entity_type", "normalized_name"],
@@ -115,9 +119,7 @@ def entities_by_month(
         .agg(max_confidence=("confidence_score", "max"))
     )
 
-    # -------------------------
     # aggregate distinct-article frequency per month/entity key
-    # -------------------------
     agg = (
         per_article.groupby(["year_month", "entity_type", "normalized_name"], as_index=False)
         .agg(
@@ -142,6 +144,9 @@ def entities_by_month(
 
     agg["rank_in_month"] = agg.groupby(["year_month"]).cumcount() + 1
     result = agg[agg["rank_in_month"] <= int(top_k_per_month)].copy()
+
+    # FINAL DISPLAY: remove day notation
+    result["year_month"] = pd.to_datetime(result["year_month"], errors="coerce").dt.strftime(YEAR_MONTH_FMT)
 
     cols = [
         "year_month",

@@ -7,6 +7,8 @@ import pandas as pd
 
 logger = logging.getLogger(__name__)
 
+YEAR_MONTH_FMT = "%Y-%m"  # display format (no day)
+
 
 def parse_id_countries(val) -> List[int]:
     if val is None:
@@ -29,7 +31,7 @@ def parse_id_countries(val) -> List[int]:
 def _to_effective_date(crawl_date_val, year_val=None, month_val=None) -> Optional[pd.Timestamp]:
     """
     Primary: crawl_date
-    Fallback: year/month -> first day of that month
+    Fallback: year/month -> YYYY-MM-01 (month anchor)
     Used only to log min/max available dates (no filtering).
     """
     cd = pd.to_datetime(crawl_date_val, errors="coerce")
@@ -57,7 +59,7 @@ def top_entities_by_country(
     """
     Top entities per country (using article.id_countries), regardless of language.
 
-    Frequency definition (aligned with analytics use):
+    Frequency definition:
       - distinct_articles_count = number of DISTINCT articles mentioning the entity
       - mentions_count = total extracted mentions (raw rows) across articles/models
 
@@ -101,14 +103,17 @@ def top_entities_by_country(
     if df.empty:
         return pd.DataFrame()
 
-    # Log available date range (no filtering)
+    # Log available date range (no filtering) — formatted as YYYY-MM
     df["effective_date"] = df.apply(
         lambda r: _to_effective_date(r.get("crawl_date"), r.get("year"), r.get("month")),
         axis=1,
     )
     eff = pd.to_datetime(df["effective_date"], errors="coerce").dropna()
     if not eff.empty:
-        logger.info(f"[top_entities_by_country] available_date_range: {eff.min()} -> {eff.max()}")
+        logger.info(
+            f"[top_entities_by_country] available_date_range: "
+            f"{eff.min().strftime(YEAR_MONTH_FMT)} -> {eff.max().strftime(YEAR_MONTH_FMT)}"
+        )
     df = df.drop(columns=["effective_date"], errors="ignore")
 
     # Parse / explode id_countries

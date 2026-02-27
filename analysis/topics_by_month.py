@@ -7,11 +7,15 @@ import pandas as pd
 
 logger = logging.getLogger(__name__)
 
+YEAR_MONTH_FMT = "%Y-%m"  # display format (no day)
+
 
 def _to_year_month(crawl_date_val, year_val=None, month_val=None) -> Optional[pd.Timestamp]:
     """
-    Primary: crawl_date -> YYYY-MM-01
-    Fallback: (year, month) -> YYYY-MM-01 if crawl_date missing/invalid
+    Internal month bucket.
+
+    We must keep a real datetime internally (Timestamp), so we use day=1 as a standard
+    month-start anchor. We later FORMAT it to "YYYY-MM" before returning/exporting.
     """
     cd = pd.to_datetime(crawl_date_val, errors="coerce")
     if not pd.isna(cd):
@@ -37,12 +41,11 @@ def topics_by_month(engine, raw_table: str = "article") -> pd.DataFrame:
     Topic frequency per month (GLOBAL: no country, no language).
 
     Output (one row per month x topic):
-      year_month, topic_label,
+      year_month ("YYYY-MM"), topic_label,
       articles_count, topic_share,
       mean_topic_score, median_topic_score,
       total_articles_in_month
     """
-
     query = f"""
         SELECT
             t.article_id,
@@ -64,6 +67,7 @@ def topics_by_month(engine, raw_table: str = "article") -> pd.DataFrame:
     df["topic_score"] = pd.to_numeric(df["topic_score"], errors="coerce")
     df["topic_label"] = df["topic_label"].astype(str).str.strip()
 
+    # internal month bucket (Timestamp at month-start)
     df["year_month"] = df.apply(
         lambda r: _to_year_month(r.get("crawl_date"), r.get("year"), r.get("month")),
         axis=1,
@@ -74,7 +78,7 @@ def topics_by_month(engine, raw_table: str = "article") -> pd.DataFrame:
 
     ym = pd.to_datetime(df["year_month"], errors="coerce").dropna()
     if not ym.empty:
-        logger.info(f"[topics_by_month] available_date_range: {ym.min().date()} -> {ym.max().date()}")
+        logger.info(f"[topics_by_month] available_date_range: {ym.min().strftime(YEAR_MONTH_FMT)} -> {ym.max().strftime(YEAR_MONTH_FMT)}")
 
     # Aggregate per (month, topic)
     agg = (
@@ -108,6 +112,9 @@ def topics_by_month(engine, raw_table: str = "article") -> pd.DataFrame:
         ascending=[True, False, False, True],
     ).reset_index(drop=True)
 
+    # FINAL DISPLAY: remove day notation
+    agg["year_month"] = pd.to_datetime(agg["year_month"], errors="coerce").dt.strftime(YEAR_MONTH_FMT)
+
     return agg
 
 
@@ -116,7 +123,7 @@ def dominant_topic_by_month(engine, raw_table: str = "article") -> pd.DataFrame:
     Dominant topic per month (GLOBAL).
 
     Output (one row per month):
-      year_month,
+      year_month ("YYYY-MM"),
       dominant_topic,
       dominant_articles_count,
       dominant_topic_share,
@@ -128,7 +135,7 @@ def dominant_topic_by_month(engine, raw_table: str = "article") -> pd.DataFrame:
     if dist.empty:
         return pd.DataFrame()
 
-    # pick top topic per month (tie-breakers already ensured by sort order)
+    # pick top topic per month
     top = (
         dist.sort_values(
             ["year_month", "articles_count", "mean_topic_score", "topic_label"],

@@ -164,7 +164,7 @@ def main():
     # =========================
     # PARAMETERS
     # =========================
-    sample_size = 5000
+    sample_size = 50
     raw_table = getattr(Config, "RAW_TABLE", "article")
     LANG_THRESHOLD = 0.60
 
