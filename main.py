@@ -14,13 +14,20 @@ import pandas as pd
 import torch
 
 from src.config import Config
+from src.logger import setup_run
 from src.db_config import DatabaseConnection
-from src.preprocessing import (
-    ArabicPreprocessor,
+
+from src.preprocessing import PreprocessRouter
+from src.preprocessing.router import (
     PREPROCESS_LANG_DETECT_PARAMS,
     PREPROCESS_NER_PARAMS,
     PREPROCESS_SENTIMENT_PARAMS,
+    LATIN_LANG_DETECT_PARAMS,
+    LATIN_NER_PARAMS,
+    LATIN_SENTIMENT_PARAMS,
+    LATIN_TOPIC_PARAMS,
 )
+
 from src.language_detection import FastTextLanguageDetector
 from src.ner_extraction import TransformersNER, DEFAULT_NER_PARAMS
 from src.sentiment_analysis import (
@@ -35,29 +42,50 @@ from src.topic_classification import (
     DEFAULT_TOPIC_PARAMS,
     CATEGORY_MAP,
 )
-
-# Root-level comparison package
 from comparison.report_generator import generate_comparison_report
+from analysis.report_generator import generate_analytics_reports
 
 
-def setup_logger():
-    run_dir = Path("results") / datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    run_dir.mkdir(parents=True, exist_ok=True)
+def export_lang_samples_csv(
+    run_dir: Path,
+    work_df: pd.DataFrame,
+    sent_results_buffer: dict,
+    topic_results_buffer: dict,
+):
+    rows = []
+    for r in work_df.itertuples(index=False):
+        aid = int(r.id)
+        lang = str(r.lang)
 
-    logger = logging.getLogger("nlp_pipeline")
-    logger.setLevel(Config.LOG_LEVEL)
-    logger.handlers.clear()
-    logger.propagate = False
+        if lang not in {"en", "fr"}:
+            continue
 
-    fmt = logging.Formatter(Config.LOG_FORMAT, datefmt=Config.LOG_DATE_FORMAT)
-    fh = logging.FileHandler(run_dir / "run.log", encoding="utf-8")
-    ch = logging.StreamHandler()
-    fh.setFormatter(fmt)
-    ch.setFormatter(fmt)
+        mv = 2 if lang == "en" else 3  # model_version mapping used in main
+        sent_info = sent_results_buffer.get((aid, mv), {})
+        topic_info = topic_results_buffer.get(aid, {})
 
-    logger.addHandler(fh)
-    logger.addHandler(ch)
-    return logger, run_dir
+        rows.append({
+            "article_id": aid,
+            "lang": lang,
+            "text_raw": r.text_raw,
+            "sentiment_preprocessed": r.text_sentiment,
+            "ner_preprocessed": r.text_ner,
+            "topic_preprocessed": r.text_topic,
+            "sentiment_label": sent_info.get("label"),
+            "sentiment_score": sent_info.get("score"),
+            "dominant_topic": topic_info.get("label"),
+            "topic_score": topic_info.get("score"),
+        })
+
+    out_df = pd.DataFrame(rows)
+    en_df = out_df[out_df["lang"] == "en"].copy()
+    fr_df = out_df[out_df["lang"] == "fr"].copy()
+
+    if not en_df.empty:
+        en_df.to_csv(Path(run_dir) / "english_samples.csv", index=False, encoding="utf-8-sig")
+
+    if not fr_df.empty:
+        fr_df.to_csv(Path(run_dir) / "french_samples.csv", index=False, encoding="utf-8-sig")
 
 
 def _pkg_version(name: str) -> str:
@@ -88,6 +116,10 @@ def _gpu_cleanup(logger: logging.Logger, cooldown_sec: float = 2.0):
 
 
 def normalize_entity_name(raw: str) -> tuple[str, str]:
+    """
+    Keep as-is for now (simple + safe).
+    Strong normalization can be moved into preprocessing later.
+    """
     if not raw:
         return "", ""
     s = unicodedata.normalize("NFC", raw).strip()
@@ -127,13 +159,12 @@ def parse_category_ids(val) -> list[int]:
 
 
 def main():
-    logger, run_dir = setup_logger()
     pipeline_t0 = time.perf_counter()
 
     # =========================
     # PARAMETERS
     # =========================
-    sample_size = 10
+    sample_size = 5000
     raw_table = getattr(Config, "RAW_TABLE", "article")
     LANG_THRESHOLD = 0.60
 
@@ -145,13 +176,6 @@ def main():
     SENTIMENT_PARAMS = dict(DEFAULT_SENTIMENT_PARAMS)
     TOPIC_PARAMS = dict(DEFAULT_TOPIC_PARAMS)
 
-    # -------------------------
-    # Model version mapping (global, across languages)
-    # 0 = Arabic AraBERT
-    # 1 = Arabic CAMeL
-    # 2 = English (single model)
-    # 3 = French  (single model)
-    # -------------------------
     NER_MODELS_BY_LANG = {
         "ar": [
             (0, Config.ARABERT_NER_MODEL),
@@ -181,10 +205,9 @@ def main():
     timing_records = []
 
     # =========================
-    # RUN CONFIG
+    # RUN CONFIG (build first)
     # =========================
     run_config = {
-        "run_id": run_dir.name,
         "timestamp": datetime.now().isoformat(timespec="seconds"),
         "environment": {
             "python": sys.version.split()[0],
@@ -210,14 +233,27 @@ def main():
             "sample_size": sample_size,
             "filters": [
                 "body IS NOT NULL",
-                "LENGTH(body) > 50",
                 "no language restriction (fastText decides)",
             ],
         },
         "preprocessing_presets": {
-            "lang_detect": PREPROCESS_LANG_DETECT_PARAMS,
-            "ner": PREPROCESS_NER_PARAMS,
-            "sentiment": PREPROCESS_SENTIMENT_PARAMS,
+            "lang_detect": {
+                "ar": PREPROCESS_LANG_DETECT_PARAMS,
+                "latin": LATIN_LANG_DETECT_PARAMS,
+            },
+            "ner": {
+                "ar": PREPROCESS_NER_PARAMS,
+                "latin": LATIN_NER_PARAMS,
+            },
+            "sentiment": {
+                "ar": PREPROCESS_SENTIMENT_PARAMS,
+                "latin": LATIN_SENTIMENT_PARAMS,
+            },
+            "topic": {
+                # router uses Arabic sentiment preset for topic
+                "ar": PREPROCESS_SENTIMENT_PARAMS,
+                "latin": LATIN_TOPIC_PARAMS,
+            },
         },
         "topic_classification": {
             "model": Config.TOPIC_MODEL,
@@ -232,13 +268,27 @@ def main():
                 for k, v in SENT_MODELS_BY_LANG.items()
             },
         },
+        "analytics_outputs": [
+            "topics_by_month.csv",
+            "top_entities_by_country.csv",
+            "entities_by_month.csv",
+            "topic_peaks.csv",
+        ],
     }
 
-    logger.info("=== RUN CONFIG ===\n" + json.dumps(run_config, indent=2, ensure_ascii=False))
+    # Create logger + run folder, and save run_config.json
+    ctx = setup_run(run_config=run_config, save_run_config=True)
+    logger = ctx.logger
+    run_dir = ctx.run_dir
+
+    # Now that run_dir exists, add run_id for completeness (optional)
+    run_config["run_id"] = run_dir.name
     (run_dir / "run_config.json").write_text(
         json.dumps(run_config, indent=2, ensure_ascii=False),
         encoding="utf-8",
     )
+
+    logger.info("=== RUN CONFIG ===\n" + json.dumps(run_config, indent=2, ensure_ascii=False))
 
     # =========================
     # DB INIT
@@ -263,9 +313,18 @@ def main():
     cat_ref = pd.read_sql("SELECT id, label_en FROM category", engine)
     cat_map = dict(zip(cat_ref["id"], cat_ref["label_en"]))
 
-    preproc = ArabicPreprocessor(logger=logger)
+    # Ensure category labels exist even if DB category table is incomplete
+    for cid, labels in CATEGORY_MAP.items():
+        try:
+            if isinstance(labels, dict) and "en" in labels:
+                cat_map.setdefault(int(cid), str(labels["en"]))
+        except Exception:
+            continue
+
+    preproc = PreprocessRouter(logger=logger)
+
     df["text_raw"] = df["body"].fillna("")
-    df["text_langdetect"] = df["text_raw"].apply(preproc.preprocess_for_lang_detect)
+    df["text_langdetect"] = df["text_raw"].apply(lambda t: preproc.preprocess(t, "xx", "lang_detect"))
 
     # Language detection
     detector = FastTextLanguageDetector(
@@ -287,21 +346,24 @@ def main():
         how="left",
     )
 
-    # Keep only languages we support for now (ar/en/fr) and threshold
     supported_langs = set(NER_MODELS_BY_LANG.keys())
     work_df = merged[(merged["lang"].isin(supported_langs)) & (merged["score"] >= LANG_THRESHOLD)].copy()
-    logger.info(f"Subset after lang filter (supported={sorted(supported_langs)} & score>={LANG_THRESHOLD}): {len(work_df)} rows")
+    logger.info(
+        f"Subset after lang filter (supported={sorted(supported_langs)} & score>={LANG_THRESHOLD}): "
+        f"{len(work_df)} rows"
+    )
 
     if work_df.empty:
         logger.warning("No rows passed language filter; stopping.")
         db.close()
         return
 
-    # Preprocess (NER + sentiment)
-    work_df["text_ner"] = work_df["text_raw"].apply(preproc.preprocess_for_ner)
-    work_df["text_sentiment"] = work_df["text_raw"].apply(preproc.preprocess_for_sentiment)
+    # Language-aware preprocessing via router
+    work_df["text_ner"] = work_df.apply(lambda r: preproc.preprocess(r.text_raw, str(r.lang), "ner"), axis=1)
+    work_df["text_sentiment"] = work_df.apply(lambda r: preproc.preprocess(r.text_raw, str(r.lang), "sentiment"), axis=1)
+    work_df["text_topic"] = work_df.apply(lambda r: preproc.preprocess(r.text_raw, str(r.lang), "topic"), axis=1)
 
-    # Pre-insert articles_enriched rows for each article, based on its detected language model_versions
+    # Pre-insert articles_enriched rows
     for r in work_df.itertuples(index=False):
         aid = int(r.id)
         lang = str(r.lang)
@@ -311,18 +373,30 @@ def main():
     # =========================
     # CPU PASS (TIMING ONLY)
     # =========================
-    logger.info("=== CPU PASS (TIMING ONLY) ===")
+    """logger.info("=== CPU PASS (TIMING ONLY) ===")
 
-    # Load CPU models per language
     ner_cpu_models_by_lang = {
-        lang: [(mv, TransformersNER(model_name=name, logger=logger, preprocessor=None, device=CPU_DEVICE, **NER_PARAMS))
-               for mv, name in models]
+        lang: [
+            (mv, TransformersNER(model_name=name, logger=logger, preprocessor=None, device=CPU_DEVICE, **NER_PARAMS))
+            for mv, name in models
+        ]
         for lang, models in NER_MODELS_BY_LANG.items()
     }
     sent_cpu_models_by_lang = {
-        lang: [(mv, TransformersSentiment(model_name=name, logger=logger, preprocessor=None, device=CPU_DEVICE,
-                                          probs_normalizer=norm, **SENTIMENT_PARAMS))
-               for mv, name, norm in models]
+        lang: [
+            (
+                mv,
+                TransformersSentiment(
+                    model_name=name,
+                    logger=logger,
+                    preprocessor=None,
+                    device=CPU_DEVICE,
+                    probs_normalizer=norm,
+                    **SENTIMENT_PARAMS,
+                ),
+            )
+            for mv, name, norm in models
+        ]
         for lang, models in SENT_MODELS_BY_LANG.items()
     }
 
@@ -339,42 +413,59 @@ def main():
             aid = int(r.id)
             lang = str(r.lang)
 
-            # NER timing
             for mv, model in ner_cpu_models_by_lang.get(lang, []):
                 t0 = time.perf_counter()
                 _ = model.predict(r.text_ner)
                 dt = time.perf_counter() - t0
-                timing_records.append({"mode": "cpu", "task": "ner", "model_version": mv, "article_id": aid, "elapsed_seconds": round(dt, 6)})
+                timing_records.append({
+                    "mode": "cpu",
+                    "task": "ner",
+                    "model_version": mv,
+                    "article_id": aid,
+                    "elapsed_seconds": round(dt, 6),
+                })
 
-            # Sentiment timing
             for mv, model in sent_cpu_models_by_lang.get(lang, []):
                 t0 = time.perf_counter()
                 _ = model.predict(r.text_sentiment)
                 dt = time.perf_counter() - t0
-                timing_records.append({"mode": "cpu", "task": "sentiment", "model_version": mv, "article_id": aid, "elapsed_seconds": round(dt, 6)})
+                timing_records.append({
+                    "mode": "cpu",
+                    "task": "sentiment",
+                    "model_version": mv,
+                    "article_id": aid,
+                    "elapsed_seconds": round(dt, 6),
+                })
 
-            # Topic timing (single model)
             t0 = time.perf_counter()
-            _ = topic_cpu.predict(r.text_ner, lang=lang)
+            _ = topic_cpu.predict(r.text_topic, lang=lang)
             dt = time.perf_counter() - t0
-            timing_records.append({"mode": "cpu", "task": "topic", "model_version": -1, "article_id": aid, "elapsed_seconds": round(dt, 6)})
+            timing_records.append({
+                "mode": "cpu",
+                "task": "topic",
+                "model_version": -1,
+                "article_id": aid,
+                "elapsed_seconds": round(dt, 6),
+            })
 
-    # Cleanup CPU models
     del ner_cpu_models_by_lang, sent_cpu_models_by_lang, topic_cpu
-    gc.collect()
+    gc.collect()"""
 
     # =========================
     # GPU PASS (MODEL-BY-MODEL) - write to DB
     # =========================
     if not torch.cuda.is_available():
         logger.warning("CUDA not available -> GPU pass skipped.")
+        sent_results_buffer = {}
+        topic_results_buffer = {}
+        gpu_time_ms_by_article_model = {}
     else:
         logger.info("=== GPU PASS (MODEL-BY-MODEL, WRITE RESULTS TO DB) ===")
 
         gpu_time_ms_by_article_model: dict[tuple[int, int], int] = {}
         sent_results_buffer: dict[tuple[int, int], dict] = {}
 
-        # ---- NER GPU (per language, per model) ----
+        # ---- NER GPU ----
         with torch.inference_mode():
             for lang, models in NER_MODELS_BY_LANG.items():
                 lang_subset = work_df[work_df["lang"] == lang]
@@ -383,7 +474,13 @@ def main():
 
                 for mv, name in models:
                     logger.info(f"[GPU][NER] lang={lang} model_version={mv}: {name}")
-                    ner = TransformersNER(model_name=name, logger=logger, preprocessor=None, device=GPU_DEVICE, **NER_PARAMS)
+                    ner = TransformersNER(
+                        model_name=name,
+                        logger=logger,
+                        preprocessor=None,
+                        device=GPU_DEVICE,
+                        **NER_PARAMS,
+                    )
 
                     for r in lang_subset.itertuples(index=False):
                         aid = int(r.id)
@@ -393,18 +490,29 @@ def main():
                         dt = time.perf_counter() - t0
 
                         gpu_time_ms_by_article_model[(aid, mv)] = gpu_time_ms_by_article_model.get((aid, mv), 0) + int(dt * 1000)
-                        timing_records.append({"mode": "gpu", "task": "ner", "model_version": mv, "article_id": aid, "elapsed_seconds": round(dt, 6)})
+                        timing_records.append({
+                            "mode": "gpu",
+                            "task": "ner",
+                            "model_version": mv,
+                            "article_id": aid,
+                            "elapsed_seconds": round(dt, 6),
+                        })
 
                         for e in ents:
                             ename, nname = normalize_entity_name(e.text)
                             if ename and nname:
                                 eid = db.upsert_entity(ename, (e.label or "UNK").upper(), nname)
-                                db.upsert_article_entity(article_id=aid, entity_id=eid, model_version=mv, confidence_score=e.score)
+                                db.upsert_article_entity(
+                                    article_id=aid,
+                                    entity_id=eid,
+                                    model_version=mv,
+                                    confidence_score=e.score,
+                                )
 
                     del ner
                     _gpu_cleanup(logger, cooldown_sec=GPU_COOLDOWN_SEC)
 
-        # ---- Sentiment GPU (per language, per model) ----
+        # ---- Sentiment GPU ----
         with torch.inference_mode():
             for lang, models in SENT_MODELS_BY_LANG.items():
                 lang_subset = work_df[work_df["lang"] == lang]
@@ -430,14 +538,20 @@ def main():
                         dt = time.perf_counter() - t0
 
                         gpu_time_ms_by_article_model[(aid, mv)] = gpu_time_ms_by_article_model.get((aid, mv), 0) + int(dt * 1000)
-                        timing_records.append({"mode": "gpu", "task": "sentiment", "model_version": mv, "article_id": aid, "elapsed_seconds": round(dt, 6)})
+                        timing_records.append({
+                            "mode": "gpu",
+                            "task": "sentiment",
+                            "model_version": mv,
+                            "article_id": aid,
+                            "elapsed_seconds": round(dt, 6),
+                        })
 
                         sent_results_buffer[(aid, mv)] = {"label": res.label, "score": float(res.score)}
 
                     del sent
                     _gpu_cleanup(logger, cooldown_sec=GPU_COOLDOWN_SEC)
 
-        # ---- Topic GPU (single model) ----
+        # ---- Topic GPU ----
         topic_results_buffer: dict[int, dict] = {}
         with torch.inference_mode():
             logger.info(f"[GPU][TOPIC] loading: {Config.TOPIC_MODEL}")
@@ -457,11 +571,17 @@ def main():
                 expected_cat_labels = [cat_map.get(cid, "Unknown") for cid in expected_cat_ids]
 
                 t0 = time.perf_counter()
-                tres = topic_gpu.predict(r.text_ner, lang=lang)
+                tres = topic_gpu.predict(r.text_topic, lang=lang)
                 _cuda_sync_if_needed(GPU_DEVICE)
                 dt = time.perf_counter() - t0
 
-                timing_records.append({"mode": "gpu", "task": "topic", "model_version": -1, "article_id": aid, "elapsed_seconds": round(dt, 6)})
+                timing_records.append({
+                    "mode": "gpu",
+                    "task": "topic",
+                    "model_version": -1,
+                    "article_id": aid,
+                    "elapsed_seconds": round(dt, 6),
+                })
 
                 topic_results_buffer[aid] = {
                     "label": tres.label,
@@ -482,7 +602,6 @@ def main():
             lang = str(r.lang)
             dom_topic = topic_results_buffer.get(aid, {}).get("label")
 
-            # For each model_version configured for this language, write one row
             for mv, _ in NER_MODELS_BY_LANG.get(lang, []):
                 sent_info = sent_results_buffer.get((aid, mv), {})
                 ptime = gpu_time_ms_by_article_model.get((aid, mv))
@@ -497,6 +616,15 @@ def main():
                     processing_time=ptime,
                 )
 
+        # Export EN/FR review CSVs
+        export_lang_samples_csv(
+            run_dir=run_dir,
+            work_df=work_df,
+            sent_results_buffer=sent_results_buffer,
+            topic_results_buffer=topic_results_buffer,
+        )
+        logger.info("Saved english_samples.csv and french_samples.csv (if EN/FR rows exist).")
+
     # =========================
     # COMPARISON REPORT
     # =========================
@@ -505,6 +633,23 @@ def main():
         logger.info("Comparison CSVs generated successfully.")
     except Exception as e:
         logger.error(f"Comparison report generation failed: {e}")
+
+    # =========================
+    # ANALYTICS REPORTS (NEW)
+    # =========================
+    try:
+        generate_analytics_reports(
+            run_dir=run_dir,
+            raw_table=raw_table,
+            top_entities_k=50,
+            top_entities_by_month_k=50,
+            peaks_window=6,
+            peaks_z_threshold=2.5,
+            default_country_id=8,
+        )
+        logger.info("Analytics CSVs generated successfully.")
+    except Exception as e:
+        logger.error(f"Analytics report generation failed: {e}")
 
     total = time.perf_counter() - pipeline_t0
     logger.info(f"Pipeline complete in {total:.2f}s")

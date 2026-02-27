@@ -7,30 +7,31 @@ from typing import Dict, Optional, Any, List, Tuple
 import logging
 
 import torch
-from transformers import AutoTokenizer, AutoModelForSequenceClassification, pipeline
+from transformers import AutoTokenizer, pipeline
 
 
 DEFAULT_TOPIC_PARAMS: Dict[str, Any] = {
     "max_chunk_tokens": 450,
-    "overlap_tokens": 50,
+    "overlap_tokens": 100,
     "aggregation": "mean_probs",
+    "multi_label": False,
 }
 
-# Category mapping: id -> labels per language
 CATEGORY_MAP: Dict[int, Dict[str, str]] = {
-    2: {"ar": "رياضة",              "fr": "Sports",       "en": "Sports"},
-    3: {"ar": "سياسة",              "fr": "Politique",     "en": "Politics"},
-    4: {"ar": "علوم / تكنولوجيا",    "fr": "Tech/Science",  "en": "Tech/Science"},
-    5: {"ar": "فن / ثقافة",         "fr": "Art/Culture",   "en": "Art/Culture"},
-    6: {"ar": "اقتصاد",             "fr": "Economie",      "en": "Economy"},
-    7: {"ar": "عامة",               "fr": "Géneral",       "en": "General"},
+    2: {"ar": "الرياضة",                 "fr": "Sports",                    "en": "Sports"},
+    3: {"ar": "السياسة",                 "fr": "Politique",                 "en": "Politics"},
+    4: {"ar": "العلوم والتكنولوجيا",      "fr": "Science et technologie",    "en": "Science and technology"},
+    5: {"ar": "الفنون والثقافة",          "fr": "Arts et culture",           "en": "Arts and culture"},
+    6: {"ar": "الاقتصاد",                "fr": "Économie",                  "en": "Economy"},
+    8: {"ar": "حرب ونزاع",               "fr": "Guerre et conflit",          "en": "War and conflict"},
+    7: {"ar": "عام",                     "fr": "Général",                  "en": "General"},
 }
 
 
 def get_candidate_labels(lang: str = "ar") -> List[str]:
     """
-    Returns the list of candidate labels for zero-shot classification
-    in the specified language. Falls back to English if language not found.
+    Returns candidate labels for zero-shot classification in the specified language.
+    Falls back to English if language not found.
     """
     fallback = "en"
     lang_key = lang if lang in ("ar", "fr", "en") else fallback
@@ -38,23 +39,36 @@ def get_candidate_labels(lang: str = "ar") -> List[str]:
 
 
 def label_to_category_id(label: str) -> Optional[int]:
-    """
-    Maps a predicted label (any language) back to its category id.
-    Returns None if no match found.
-    """
+    """Maps a predicted label (any language) back to its category id."""
+    if not label:
+        return None
+    lab = label.strip().casefold()
     for cat_id, labels in CATEGORY_MAP.items():
         for lang_label in labels.values():
-            if label.strip() == lang_label.strip():
+            if lab == (lang_label or "").strip().casefold():
                 return cat_id
     return None
 
 
+def get_hypothesis_template(lang: str) -> str:
+    """
+    Language-specific hypothesis templates improve XNLI zero-shot quality.
+    """
+    lang = (lang or "").lower().strip()
+    if lang == "ar":
+        return "هذا النص عن {}."
+    if lang == "fr":
+        return "Ce texte parle de {}."
+    # default English
+    return "This text is about {}."
+
+
 @dataclass
 class TopicResult:
-    label: str                    # best predicted label
-    category_id: Optional[int]   # mapped category id (2-7) or None
-    score: float                  # confidence of best label
-    all_scores: Dict[str, float]  # scores for all candidate labels
+    label: str
+    category_id: Optional[int]
+    score: float
+    all_scores: Dict[str, float]
 
 
 class TransformersTopic:
@@ -63,7 +77,7 @@ class TransformersTopic:
     - Supports Arabic, French, English
     - Token-based chunking for long documents
     - Token-weighted probability aggregation across chunks
-    - No fine-tuning required
+    - Uses language-specific hypothesis templates
     """
 
     def __init__(
@@ -75,6 +89,7 @@ class TransformersTopic:
         max_chunk_tokens: int = DEFAULT_TOPIC_PARAMS["max_chunk_tokens"],
         overlap_tokens: int = DEFAULT_TOPIC_PARAMS["overlap_tokens"],
         aggregation: str = DEFAULT_TOPIC_PARAMS["aggregation"],
+        multi_label: bool = DEFAULT_TOPIC_PARAMS["multi_label"],
     ):
         self.logger = logger or logging.getLogger(__name__)
         self.model_name = model_name
@@ -82,7 +97,8 @@ class TransformersTopic:
 
         self.max_chunk_tokens = int(max_chunk_tokens)
         self.overlap_tokens = int(overlap_tokens)
-        self.aggregation = aggregation
+        self.aggregation = str(aggregation)
+        self.multi_label = bool(multi_label)
 
         if device is None:
             device = 0 if torch.cuda.is_available() else -1
@@ -103,7 +119,7 @@ class TransformersTopic:
         self.logger.info(
             f"Topic model loaded: {model_name} | device={self.device} | "
             f"safe_max_tokens={self._safe_max_tokens} overlap_tokens={self.overlap_tokens} "
-            f"aggregation={self.aggregation}"
+            f"aggregation={self.aggregation} multi_label={self.multi_label}"
         )
 
     # ----------------------------
@@ -133,6 +149,7 @@ class TransformersTopic:
             j = min(i + self._safe_max_tokens, n)
             start_char = offsets[i][0]
             end_char = offsets[j - 1][1]
+
             if end_char <= start_char:
                 i = j
                 continue
@@ -148,87 +165,121 @@ class TransformersTopic:
     # ----------------------------
     # Classify a single chunk
     # ----------------------------
-    def _classify_chunk(self, chunk_text: str, candidate_labels: List[str]) -> Dict[str, float]:
+    def _classify_chunk(
+        self,
+        chunk_text: str,
+        candidate_labels: List[str],
+        hypothesis_template: str,
+    ) -> Dict[str, float]:
         """
         Run zero-shot classification on a single chunk.
         Returns dict of {label: score} for all candidate labels.
         """
         try:
-            result = self._clf(chunk_text, candidate_labels=candidate_labels)
+            result = self._clf(
+                chunk_text,
+                candidate_labels=candidate_labels,
+                multi_label=self.multi_label,
+                hypothesis_template=hypothesis_template,
+            )
             return dict(zip(result["labels"], result["scores"]))
         except Exception as e:
             self.logger.error(f"Topic classification failed: {e}")
             return {label: 0.0 for label in candidate_labels}
 
     # ----------------------------
+    # Preprocessing hook
+    # ----------------------------
+    def _maybe_preprocess(self, text: str, lang: str) -> str:
+        """
+        If a preprocessor is provided:
+        - Prefer router-style: preprocess(text, lang, task="topic")
+        - Else fall back to callable(text)
+        """
+        if self.preprocessor is None:
+            return text
+
+        # Router-like object
+        if hasattr(self.preprocessor, "preprocess"):
+            try:
+                return self.preprocessor.preprocess(text, lang=lang, task="topic")
+            except TypeError:
+                # If someone passes a simpler preprocessor with preprocess(text)
+                return self.preprocessor.preprocess(text)
+
+        # Callable function
+        if callable(self.preprocessor):
+            return self.preprocessor(text)
+
+        return text
+
+    # ----------------------------
     # Public API
     # ----------------------------
     def predict(self, text: str, lang: str = "ar") -> TopicResult:
-        """
-        Predict the topic of a text.
-        Args:
-            text: the article text (raw or preprocessed)
-            lang: language code ('ar', 'fr', 'en') to select candidate labels
-        Returns:
-            TopicResult with best label, category_id, score, and all scores
-        """
         if not text or not isinstance(text, str):
-            return TopicResult(
-                label="UNK",
-                category_id=None,
-                score=0.0,
-                all_scores={},
-            )
+            return TopicResult(label="UNK", category_id=None, score=0.0, all_scores={})
 
-        # Preprocess if preprocessor is provided
-        if self.preprocessor is not None:
-            if hasattr(self.preprocessor, "preprocess_for_ner"):
-                text = self.preprocessor.preprocess_for_ner(text)
-            elif callable(self.preprocessor):
-                text = self.preprocessor(text)
+        lang = (lang or "en").lower().strip()
+        text = self._maybe_preprocess(text, lang)
 
-        # Get candidate labels for the detected language
         candidate_labels = get_candidate_labels(lang)
+        hypothesis_template = get_hypothesis_template(lang)
 
-        # Chunk the text
         chunks = self._token_chunks(text)
         if not chunks:
-            return TopicResult(
-                label="UNK",
-                category_id=None,
-                score=0.0,
-                all_scores={},
+            return TopicResult(label="UNK", category_id=None, score=0.0, all_scores={})
+
+        if self.aggregation not in ("mean_probs", "max_chunk"):
+            self.logger.warning(f"Unknown aggregation='{self.aggregation}', falling back to mean_probs")
+            self.aggregation = "mean_probs"
+
+        # ---- aggregation: mean_probs (token-weighted) ----
+        if self.aggregation == "mean_probs":
+            probs_sum: Dict[str, float] = {label: 0.0 for label in candidate_labels}
+            weight_sum = 0.0
+
+            for chunk_text, _ in chunks:
+                scores = self._classify_chunk(chunk_text, candidate_labels, hypothesis_template)
+                w = float(len(self.tokenizer(chunk_text, add_special_tokens=True)["input_ids"])) or 1.0
+                weight_sum += w
+                for label in candidate_labels:
+                    probs_sum[label] += scores.get(label, 0.0) * w
+
+            probs_avg = (
+                {label: (v / weight_sum) for label, v in probs_sum.items()}
+                if weight_sum > 0
+                else {label: 0.0 for label in candidate_labels}
             )
 
-        # Aggregate scores across chunks (token-weighted mean)
-        probs_sum: Dict[str, float] = {label: 0.0 for label in candidate_labels}
-        weight_sum = 0.0
+            best_label = max(probs_avg.items(), key=lambda x: x[1])[0]
+            best_score = float(probs_avg.get(best_label, 0.0))
+            cat_id = label_to_category_id(best_label)
+
+            return TopicResult(
+                label=best_label,
+                category_id=cat_id,
+                score=best_score,
+                all_scores=probs_avg,
+            )
+
+        # ---- aggregation: max_chunk (take the chunk with strongest top score) ----
+        best_overall_label = "UNK"
+        best_overall_score = -1.0
+        best_overall_scores: Dict[str, float] = {label: 0.0 for label in candidate_labels}
 
         for chunk_text, _ in chunks:
-            scores = self._classify_chunk(chunk_text, candidate_labels)
-            # Weight = number of tokens in this chunk
-            w = float(len(self.tokenizer(chunk_text, add_special_tokens=True)["input_ids"]))
-            weight_sum += w
-
-            for label in candidate_labels:
-                probs_sum[label] += scores.get(label, 0.0) * w
-
-        # Compute weighted average
-        if weight_sum > 0:
-            probs_avg = {label: (v / weight_sum) for label, v in probs_sum.items()}
-        else:
-            probs_avg = {label: 0.0 for label in candidate_labels}
-
-        # Find best label
-        best_label = max(probs_avg.items(), key=lambda x: x[1])[0] if probs_avg else "UNK"
-        best_score = float(probs_avg.get(best_label, 0.0))
-
-        # Map label back to category id
-        cat_id = label_to_category_id(best_label)
+            scores = self._classify_chunk(chunk_text, candidate_labels, hypothesis_template)
+            top_label = max(scores.items(), key=lambda x: x[1])[0] if scores else "UNK"
+            top_score = float(scores.get(top_label, 0.0))
+            if top_score > best_overall_score:
+                best_overall_score = top_score
+                best_overall_label = top_label
+                best_overall_scores = scores
 
         return TopicResult(
-            label=best_label,
-            category_id=cat_id,
-            score=best_score,
-            all_scores=probs_avg,
+            label=best_overall_label,
+            category_id=label_to_category_id(best_overall_label),
+            score=float(best_overall_score if best_overall_score >= 0 else 0.0),
+            all_scores=best_overall_scores,
         )

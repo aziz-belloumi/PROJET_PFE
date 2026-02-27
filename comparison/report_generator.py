@@ -1,18 +1,3 @@
-# comparison/report_generator.py
-"""
-Generate model comparison outputs as CSV files.
-
-Outputs (in one folder):
-- comparison.log
-- ner_comparison.csv
-- sentiment_comparison.csv
-- timing_comparison.csv          (only if timing_records provided)
-
-IMPORTANT:
-- If run_dir is provided, results are written into that existing folder.
-- If run_dir is None, a new folder is created under ./results/<timestamp>/ (standalone usage).
-"""
-
 from __future__ import annotations
 
 from datetime import datetime
@@ -30,11 +15,23 @@ from comparison.timing_comparison import run_timing_comparison
 
 def _setup_comparison_logger(run_dir: Path) -> logging.Logger:
     logger = logging.getLogger("comparison")
-    logger.setLevel(Config.LOG_LEVEL)
+
+    # LOG_LEVEL might be "INFO" etc. logging.setLevel accepts string in recent Python,
+    # but to be safe we convert if needed.
+    level = getattr(Config, "LOG_LEVEL", "INFO")
+    if isinstance(level, str):
+        level = logging._nameToLevel.get(level.upper(), logging.INFO)
+
+    logger.setLevel(level)
+
+    # Reset handlers to avoid duplicate logs when called multiple times
     logger.handlers.clear()
     logger.propagate = False
 
-    fmt = logging.Formatter(Config.LOG_FORMAT, datefmt=Config.LOG_DATE_FORMAT)
+    fmt = logging.Formatter(
+        getattr(Config, "LOG_FORMAT", "%(asctime)s [%(levelname)s] %(name)s: %(message)s"),
+        datefmt=getattr(Config, "LOG_DATE_FORMAT", "%Y-%m-%d %H:%M:%S"),
+    )
 
     fh = logging.FileHandler(run_dir / "comparison.log", encoding="utf-8")
     fh.setFormatter(fmt)
@@ -52,19 +49,7 @@ def generate_comparison_report(
     results_root: Union[str, Path] = "results",
     timing_records: Optional[List[Dict[str, Any]]] = None,
 ) -> Path:
-    """
-    Generate comparison CSVs by reading pipeline outputs from MySQL tables.
 
-    Args:
-        run_dir:
-            - If provided: write all comparison outputs inside this folder.
-            - If None: create a new timestamped folder under results_root.
-        results_root: base folder used only when run_dir is None.
-        timing_records: list of timing dicts collected during pipeline execution.
-
-    Returns:
-        Path to the folder that contains the comparison outputs.
-    """
     if run_dir is None:
         results_root = Path(results_root)
         run_dir = results_root / datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
@@ -75,7 +60,6 @@ def generate_comparison_report(
     logger = _setup_comparison_logger(run_dir)
     logger.info(f"Comparison output directory: {run_dir.resolve()}")
 
-    # DB connection (read-only usage here)
     db = DatabaseConnection(logger=logger)
     engine = db.get_engine()
 
@@ -85,7 +69,7 @@ def generate_comparison_report(
         ner_df = run_ner_comparison(engine)
         ner_path = run_dir / "ner_comparison.csv"
         ner_df.to_csv(ner_path, index=False, encoding="utf-8-sig")
-        logger.info(f"Saved: {ner_path}")
+        logger.info(f"Saved: {ner_path} | rows={len(ner_df)}")
     except Exception as e:
         logger.exception(f"NER comparison failed: {e}")
 
@@ -95,23 +79,23 @@ def generate_comparison_report(
         sent_df = run_sentiment_comparison(engine)
         sent_path = run_dir / "sentiment_comparison.csv"
         sent_df.to_csv(sent_path, index=False, encoding="utf-8-sig")
-        logger.info(f"Saved: {sent_path}")
+        logger.info(f"Saved: {sent_path} | rows={len(sent_df)}")
     except Exception as e:
         logger.exception(f"Sentiment comparison failed: {e}")
 
-    # ---- Timing (local only) ----
-    if timing_records is not None:
+    # ---- Timing (records provided by main) ----
+    if timing_records:
         try:
             logger.info("Running timing comparison...")
             timing_df = run_timing_comparison(timing_records)
 
-            # Keep only the relevant tasks (ner, sentiment, topic)
+            # Keep only main tasks if present
             if not timing_df.empty and "task" in timing_df.columns:
                 timing_df = timing_df[timing_df["task"].isin(["ner", "sentiment", "topic"])].copy()
 
             timing_path = run_dir / "timing_comparison.csv"
             timing_df.to_csv(timing_path, index=False, encoding="utf-8-sig")
-            logger.info(f"Saved: {timing_path}")
+            logger.info(f"Saved: {timing_path} | rows={len(timing_df)}")
         except Exception as e:
             logger.exception(f"Timing comparison failed: {e}")
     else:
@@ -123,5 +107,4 @@ def generate_comparison_report(
 
 
 if __name__ == "__main__":
-    # Standalone usage
     generate_comparison_report()
