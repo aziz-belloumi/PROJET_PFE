@@ -86,7 +86,8 @@ class DatabaseConnection:
 
                     dominant_topic VARCHAR(100),
 
-                    processing_time BIGINT,
+                    cpu_processing_time BIGINT,
+                    gpu_processing_time BIGINT,
 
                     PRIMARY KEY (article_id, model_version),
                     INDEX idx_lang (language),
@@ -163,24 +164,26 @@ class DatabaseConnection:
         sentiment_label: str | None = None,
         sentiment_score: float | None = None,
         dominant_topic: str | None = None,
-        processing_time: int | None = None,
+        cpu_processing_time: int | None = None,
+        gpu_processing_time: int | None = None,
     ):
         sql = """
         INSERT INTO articles_enriched (
             article_id, model_version, language,
             sentiment_label, sentiment_score,
-            dominant_topic, processing_time
+            dominant_topic, cpu_processing_time, gpu_processing_time
         ) VALUES (
             :aid, :mv, :lang,
             :s_lbl, :s_sc,
-            :topic, :ptime
+            :topic, :ctime, :gtime
         )
         ON DUPLICATE KEY UPDATE
             language = COALESCE(VALUES(language), language),
             sentiment_label = COALESCE(VALUES(sentiment_label), sentiment_label),
             sentiment_score = COALESCE(VALUES(sentiment_score), sentiment_score),
             dominant_topic = COALESCE(VALUES(dominant_topic), dominant_topic),
-            processing_time = COALESCE(VALUES(processing_time), processing_time)
+            cpu_processing_time = COALESCE(VALUES(cpu_processing_time), cpu_processing_time),
+            gpu_processing_time = COALESCE(VALUES(gpu_processing_time), gpu_processing_time)
         """
         self.execute_query(sql, {
             "aid": int(article_id),
@@ -189,7 +192,8 @@ class DatabaseConnection:
             "s_lbl": sentiment_label,
             "s_sc": sentiment_score,
             "topic": dominant_topic,
-            "ptime": processing_time,
+            "ctime": cpu_processing_time,
+            "gtime": gpu_processing_time,
         })
 
     def upsert_entity(self, entity_name: str, entity_type: str, normalized_name: str) -> int:

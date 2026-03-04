@@ -164,7 +164,7 @@ def main():
     # =========================
     # PARAMETERS
     # =========================
-    sample_size = 50
+    sample_size = 100
     raw_table = getattr(Config, "RAW_TABLE", "article")
     LANG_THRESHOLD = 0.60
 
@@ -373,7 +373,8 @@ def main():
     # =========================
     # CPU PASS (TIMING ONLY)
     # =========================
-    """logger.info("=== CPU PASS (TIMING ONLY) ===")
+    cpu_time_ms_by_article_model: dict[tuple[int, int], int] = {}
+    logger.info("=== CPU PASS (TIMING ONLY) ===")
 
     ner_cpu_models_by_lang = {
         lang: [
@@ -417,6 +418,7 @@ def main():
                 t0 = time.perf_counter()
                 _ = model.predict(r.text_ner)
                 dt = time.perf_counter() - t0
+                cpu_time_ms_by_article_model[(aid, mv)] = cpu_time_ms_by_article_model.get((aid, mv), 0) + int(dt * 1000)
                 timing_records.append({
                     "mode": "cpu",
                     "task": "ner",
@@ -429,6 +431,7 @@ def main():
                 t0 = time.perf_counter()
                 _ = model.predict(r.text_sentiment)
                 dt = time.perf_counter() - t0
+                cpu_time_ms_by_article_model[(aid, mv)] = cpu_time_ms_by_article_model.get((aid, mv), 0) + int(dt * 1000)
                 timing_records.append({
                     "mode": "cpu",
                     "task": "sentiment",
@@ -449,7 +452,7 @@ def main():
             })
 
     del ner_cpu_models_by_lang, sent_cpu_models_by_lang, topic_cpu
-    gc.collect()"""
+    gc.collect()
 
     # =========================
     # GPU PASS (MODEL-BY-MODEL) - write to DB
@@ -604,7 +607,8 @@ def main():
 
             for mv, _ in NER_MODELS_BY_LANG.get(lang, []):
                 sent_info = sent_results_buffer.get((aid, mv), {})
-                ptime = gpu_time_ms_by_article_model.get((aid, mv))
+                cpu_ptime = cpu_time_ms_by_article_model.get((aid, mv))
+                gpu_ptime = gpu_time_ms_by_article_model.get((aid, mv))
 
                 db.upsert_articles_enriched(
                     article_id=aid,
@@ -613,7 +617,8 @@ def main():
                     sentiment_label=sent_info.get("label"),
                     sentiment_score=sent_info.get("score"),
                     dominant_topic=dom_topic,
-                    processing_time=ptime,
+                    cpu_processing_time=cpu_ptime,
+                    gpu_processing_time=gpu_ptime,
                 )
 
         # Export EN/FR review CSVs
