@@ -115,21 +115,6 @@ def _gpu_cleanup(logger: logging.Logger, cooldown_sec: float = 2.0):
         time.sleep(cooldown_sec)
 
 
-def normalize_entity_name(raw: str) -> tuple[str, str]:
-    """
-    Keep as-is for now (simple + safe).
-    Strong normalization can be moved into preprocessing later.
-    """
-    if not raw:
-        return "", ""
-    s = unicodedata.normalize("NFC", raw).strip()
-    s = re.sub(r"\u0640", "", s)
-    s = re.sub(r"\s+", " ", s).strip()
-
-    n = re.sub(r"[\u064B-\u065F\u0670]", "", s)
-    n = re.sub(r"[^\u0600-\u06FF0-9A-Za-z\s]", " ", n)
-    n = re.sub(r"\s+", " ", n).strip()
-    return s, n
 
 
 def parse_category_ids(val) -> list[int]:
@@ -164,7 +149,7 @@ def main():
     # =========================
     # PARAMETERS
     # =========================
-    sample_size = 100
+    sample_size = 50
     raw_table = getattr(Config, "RAW_TABLE", "article")
     LANG_THRESHOLD = 0.60
 
@@ -202,7 +187,6 @@ def main():
         ],
     }
 
-    timing_records = []
 
     # =========================
     # RUN CONFIG (build first)
@@ -300,15 +284,21 @@ def main():
     # =========================
     # SAMPLE + PREPROCESS ONCE
     # =========================
+    # Incremental: fetch articles not yet fully processed.
+    # A row in articles_enriched with sentiment_label IS NULL means
+    # the run crashed after the placeholder insert -> retry it.
     query = f"""
-        SELECT id, body, id_language, id_categories
-        FROM {raw_table}
-        WHERE body IS NOT NULL
-        ORDER BY crawl_date DESC, id DESC
+        SELECT a.id, a.body, a.id_language, a.id_categories
+        FROM {raw_table} a
+        LEFT JOIN articles_enriched ae ON a.id = ae.article_id
+        WHERE a.body IS NOT NULL
+          AND (ae.article_id IS NULL OR ae.sentiment_label IS NULL)
+        GROUP BY a.id
+        ORDER BY a.crawl_date DESC, a.id DESC
         LIMIT {sample_size}
     """
     df = pd.read_sql(query, engine)
-    logger.info(f"Fetched {len(df)} rows from {raw_table}")
+    logger.info(f"Fetched {len(df)} unprocessed rows from {raw_table}")
 
     cat_ref = pd.read_sql("SELECT id, label_en FROM category", engine)
     cat_map = dict(zip(cat_ref["id"], cat_ref["label_en"]))
@@ -419,37 +409,16 @@ def main():
                 _ = model.predict(r.text_ner)
                 dt = time.perf_counter() - t0
                 cpu_time_ms_by_article_model[(aid, mv)] = cpu_time_ms_by_article_model.get((aid, mv), 0) + int(dt * 1000)
-                timing_records.append({
-                    "mode": "cpu",
-                    "task": "ner",
-                    "model_version": mv,
-                    "article_id": aid,
-                    "elapsed_seconds": round(dt, 6),
-                })
 
             for mv, model in sent_cpu_models_by_lang.get(lang, []):
                 t0 = time.perf_counter()
                 _ = model.predict(r.text_sentiment)
                 dt = time.perf_counter() - t0
                 cpu_time_ms_by_article_model[(aid, mv)] = cpu_time_ms_by_article_model.get((aid, mv), 0) + int(dt * 1000)
-                timing_records.append({
-                    "mode": "cpu",
-                    "task": "sentiment",
-                    "model_version": mv,
-                    "article_id": aid,
-                    "elapsed_seconds": round(dt, 6),
-                })
 
             t0 = time.perf_counter()
             _ = topic_cpu.predict(r.text_topic, lang=lang)
             dt = time.perf_counter() - t0
-            timing_records.append({
-                "mode": "cpu",
-                "task": "topic",
-                "model_version": -1,
-                "article_id": aid,
-                "elapsed_seconds": round(dt, 6),
-            })
 
     del ner_cpu_models_by_lang, sent_cpu_models_by_lang, topic_cpu
     gc.collect()
@@ -493,18 +462,11 @@ def main():
                         dt = time.perf_counter() - t0
 
                         gpu_time_ms_by_article_model[(aid, mv)] = gpu_time_ms_by_article_model.get((aid, mv), 0) + int(dt * 1000)
-                        timing_records.append({
-                            "mode": "gpu",
-                            "task": "ner",
-                            "model_version": mv,
-                            "article_id": aid,
-                            "elapsed_seconds": round(dt, 6),
-                        })
 
                         for e in ents:
-                            ename, nname = normalize_entity_name(e.text)
-                            if ename and nname:
-                                eid = db.upsert_entity(ename, (e.label or "UNK").upper(), nname)
+                            nname = preproc.normalize_entity(e.text, lang)
+                            if nname:
+                                eid = db.upsert_entity(e.text.strip(), (e.label or "UNK").upper(), nname)
                                 db.upsert_article_entity(
                                     article_id=aid,
                                     entity_id=eid,
@@ -541,13 +503,6 @@ def main():
                         dt = time.perf_counter() - t0
 
                         gpu_time_ms_by_article_model[(aid, mv)] = gpu_time_ms_by_article_model.get((aid, mv), 0) + int(dt * 1000)
-                        timing_records.append({
-                            "mode": "gpu",
-                            "task": "sentiment",
-                            "model_version": mv,
-                            "article_id": aid,
-                            "elapsed_seconds": round(dt, 6),
-                        })
 
                         sent_results_buffer[(aid, mv)] = {"label": res.label, "score": float(res.score)}
 
@@ -578,13 +533,6 @@ def main():
                 _cuda_sync_if_needed(GPU_DEVICE)
                 dt = time.perf_counter() - t0
 
-                timing_records.append({
-                    "mode": "gpu",
-                    "task": "topic",
-                    "model_version": -1,
-                    "article_id": aid,
-                    "elapsed_seconds": round(dt, 6),
-                })
 
                 topic_results_buffer[aid] = {
                     "label": tres.label,
@@ -634,7 +582,7 @@ def main():
     # COMPARISON REPORT
     # =========================
     try:
-        generate_comparison_report(run_dir=run_dir, timing_records=timing_records)
+        generate_comparison_report(run_dir=run_dir)
         logger.info("Comparison CSVs generated successfully.")
     except Exception as e:
         logger.error(f"Comparison report generation failed: {e}")
@@ -655,6 +603,15 @@ def main():
         logger.info("Analytics CSVs generated successfully.")
     except Exception as e:
         logger.error(f"Analytics report generation failed: {e}")
+
+    # =========================
+    # GLOBAL ENTITY FREQUENCY
+    # =========================
+    try:
+        db.update_entity_frequencies()
+        logger.info("Global entity frequencies updated successfully.")
+    except Exception as e:
+        logger.error(f"Failed to update entity frequencies: {e}")
 
     total = time.perf_counter() - pipeline_t0
     logger.info(f"Pipeline complete in {total:.2f}s")

@@ -55,6 +55,25 @@ class ArabicPreprocessor:
     def fix_merged_libya(self, text: str) -> str:
         return re.sub(r"([\u0600-\u06FF\u0750-\u077F])ليبيا", r"\1 ليبيا", text)
 
+    def normalize_entity(self, text: str) -> str:
+        if not text:
+            return ""
+        
+        # 1) Basic cleanup
+        s = self.normalize_unicode_nfc(text)
+        s = self.remove_diacritics(s)
+        s = self.remove_tatweel(s)
+        
+        # 2) Arabic-specific variants
+        s = re.sub(r"[أإآ]", "ا", s)
+        s = re.sub(r"ة", "ه", s)
+        s = re.sub(r"ى", "ي", s)
+
+        # 3) Final character filter (keep Arabic/Latin/Digits)
+        s = re.sub(r"[^\u0600-\u06FF0-9A-Za-z\s]", " ", s)
+        
+        return self.normalize_whitespace(s).lower()
+
     def preprocess(
         self,
         text: Optional[str],

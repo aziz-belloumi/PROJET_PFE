@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from pathlib import Path
 import logging
-from typing import Optional, List, Dict, Any, Union
+from typing import Optional, Union
 
 from src.config import Config
 from src.db_config import DatabaseConnection
@@ -47,7 +47,6 @@ def _setup_comparison_logger(run_dir: Path) -> logging.Logger:
 def generate_comparison_report(
     run_dir: Optional[Union[str, Path]] = None,
     results_root: Union[str, Path] = "results",
-    timing_records: Optional[List[Dict[str, Any]]] = None,
 ) -> Path:
 
     if run_dir is None:
@@ -83,23 +82,15 @@ def generate_comparison_report(
     except Exception as e:
         logger.exception(f"Sentiment comparison failed: {e}")
 
-    # ---- Timing (records provided by main) ----
-    if timing_records:
-        try:
-            logger.info("Running timing comparison...")
-            timing_df = run_timing_comparison(timing_records)
-
-            # Keep only main tasks if present
-            if not timing_df.empty and "task" in timing_df.columns:
-                timing_df = timing_df[timing_df["task"].isin(["ner", "sentiment", "topic"])].copy()
-
-            timing_path = run_dir / "timing_comparison.csv"
-            timing_df.to_csv(timing_path, index=False, encoding="utf-8-sig")
-            logger.info(f"Saved: {timing_path} | rows={len(timing_df)}")
-        except Exception as e:
-            logger.exception(f"Timing comparison failed: {e}")
-    else:
-        logger.warning("No timing_records provided -> timing_comparison.csv will not be generated.")
+    # ---- Timing (reads from articles_enriched, cumulative across all runs) ----
+    try:
+        logger.info("Running timing comparison...")
+        timing_df = run_timing_comparison(engine)
+        timing_path = run_dir / "timing_comparison.csv"
+        timing_df.to_csv(timing_path, index=False, encoding="utf-8-sig")
+        logger.info(f"Saved: {timing_path} | rows={len(timing_df)}")
+    except Exception as e:
+        logger.exception(f"Timing comparison failed: {e}")
 
     db.close()
     logger.info("Comparison report generation finished.")

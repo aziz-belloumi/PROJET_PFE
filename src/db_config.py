@@ -75,7 +75,7 @@ class DatabaseConnection:
 
                 # 1) articles_enriched (rows multiplied by 3 via model_version)
                 conn.execute(text("""
-                CREATE TABLE articles_enriched (
+                CREATE TABLE IF NOT EXISTS articles_enriched (
                     article_id BIGINT NOT NULL,
                     model_version TINYINT NOT NULL,  -- 0=arabert, 1=camel, 2=mbert
 
@@ -97,21 +97,23 @@ class DatabaseConnection:
 
                 # 2) entities dictionary
                 conn.execute(text("""
-                CREATE TABLE entities (
+                CREATE TABLE IF NOT EXISTS entities (
                     entity_id BIGINT AUTO_INCREMENT PRIMARY KEY,
                     entity_name VARCHAR(255) NOT NULL,
                     entity_type VARCHAR(20) NOT NULL,
                     normalized_name VARCHAR(255) NOT NULL,
+                    frequency INT DEFAULT 0,
 
                     UNIQUE KEY uq_entity (entity_type, normalized_name),
                     INDEX idx_type (entity_type),
-                    INDEX idx_norm (normalized_name)
+                    INDEX idx_norm (normalized_name),
+                    INDEX idx_freq (frequency)
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
                 """))
 
                 # 3) article_entities link (with model_version as number)
                 conn.execute(text("""
-                CREATE TABLE article_entities (
+                CREATE TABLE IF NOT EXISTS article_entities (
                     article_id BIGINT NOT NULL,
                     entity_id BIGINT NOT NULL,
                     model_version TINYINT NOT NULL,  -- 0=arabert, 1=camel, 2=mbert
@@ -130,7 +132,7 @@ class DatabaseConnection:
 
                 # 4) article_topics (no rank)
                 conn.execute(text("""
-                CREATE TABLE article_topics (
+                CREATE TABLE IF NOT EXISTS article_topics (
                     article_id BIGINT NOT NULL,
                     topic_label VARCHAR(100) NOT NULL,
                     topic_score FLOAT,
@@ -149,7 +151,7 @@ class DatabaseConnection:
             raise
 
     def init_result_tables(self):
-        self.drop_result_tables()
+        """Ensure enriched tables exist without dropping existing data."""
         self.create_result_tables()
 
     # ============================================================
@@ -196,13 +198,51 @@ class DatabaseConnection:
             "gtime": gpu_processing_time,
         })
 
+    def find_similar_entity(self, normalized_name: str, entity_type: str, threshold: float = 0.9) -> int | None:
+        """
+        Looks for an existing entity with the same type and a very similar normalized name.
+        Uses MySQL's string comparison or a simple exact match fallback if no fuzzy plugin.
+        Since we want Levenshtein-like behavior without external plugins, we use 
+        a list of recent similar and check top candidates.
+        """
+        # Exact match first (fast)
+        sql_exact = "SELECT entity_id FROM entities WHERE entity_type = :typ AND normalized_name = :norm LIMIT 1"
+        res = self.execute_query(sql_exact, {"typ": entity_type, "norm": normalized_name})
+        row = res.fetchone()
+        if row:
+            return int(row[0])
+        
+        # Fuzzy fallback: If name is long enough, check for minor differences
+        if len(normalized_name) < 5:
+            return None
+
+        # Simple heuristic: Check entities with same first 3 chars to limit search
+        prefix = normalized_name[:3]
+        sql_fuzzy = "SELECT entity_id, normalized_name FROM entities WHERE entity_type = :typ AND normalized_name LIKE :pref"
+        res = self.execute_query(sql_fuzzy, {"typ": entity_type, "pref": f"{prefix}%"})
+        
+        from difflib import SequenceMatcher
+        for row in res.fetchall():
+            eid, existing_name = row
+            ratio = SequenceMatcher(None, normalized_name, existing_name).ratio()
+            if ratio >= threshold:
+                return int(eid)
+        
+        return None
+
     def upsert_entity(self, entity_name: str, entity_type: str, normalized_name: str) -> int:
+        """
+        Inserts or updates an entity with similarity-based deduplication.
+        """
+        # 1. Look for similar/exact entity first
+        existing_id = self.find_similar_entity(normalized_name, entity_type)
+        if existing_id:
+            return existing_id
+
+        # 2. Insert if new
         sql = """
         INSERT INTO entities (entity_name, entity_type, normalized_name)
         VALUES (:name, :typ, :norm)
-        ON DUPLICATE KEY UPDATE
-            entity_name = VALUES(entity_name),
-            entity_id = LAST_INSERT_ID(entity_id)
         """
         with self.engine.connect() as conn:
             conn.execute(text(sql), {"name": entity_name, "typ": entity_type, "norm": normalized_name})
@@ -210,6 +250,22 @@ class DatabaseConnection:
             entity_id = int(res.scalar())
             conn.commit()
         return entity_id
+
+    def update_entity_frequencies(self):
+        """
+        Calculates global frequency for each entity based on article_entities counts.
+        """
+        self.logger.info("Computing global entity frequencies...")
+        sql = """
+        UPDATE entities e
+        JOIN (
+            SELECT entity_id, COUNT(*) as cnt
+            FROM article_entities
+            GROUP BY entity_id
+        ) stats ON e.entity_id = stats.entity_id
+        SET e.frequency = stats.cnt
+        """
+        self.execute_query(sql)
 
     def upsert_article_entity(
         self,

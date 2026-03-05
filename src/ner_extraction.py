@@ -388,7 +388,19 @@ class TransformersNER:
                 continue
 
             gap = base_text[last.end:ent.start] if 0 <= last.end <= ent.start <= len(base_text) else ""
-            if not self._gap_is_mergeable(gap):
+            
+            is_mergeable = self._gap_is_mergeable(gap)
+            if not is_mergeable:
+                clean_gap = gap.strip().lower()
+                multilingual_linkers = {
+                    "of", "and", "the", 
+                    "de", "du", "des", "et", "le", "la", "les", "en", "aux",
+                    "و", "من", "في", "بن", "ابن"
+                }
+                if clean_gap in multilingual_linkers:
+                    is_mergeable = True
+            
+            if not is_mergeable:
                 merged.append(ent)
                 continue
 

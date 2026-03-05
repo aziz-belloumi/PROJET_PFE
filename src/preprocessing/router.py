@@ -128,3 +128,10 @@ class PreprocessRouter:
             return self.lat.preprocess(text, **LATIN_TOPIC_PARAMS)
 
         return self.lat.preprocess(text, **LATIN_LANG_DETECT_PARAMS)
+
+    def normalize_entity(self, text: str, lang: str) -> str:
+        lang = (lang or "").lower().strip()
+        if lang == "ar":
+            return self.ar.normalize_entity(text)
+        # Default to Latin (EN/FR)
+        return self.lat.normalize_entity(text)

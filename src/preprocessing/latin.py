@@ -192,3 +192,18 @@ class LatinPreprocessor:
 
     def preprocess_for_lang_detect(self, text: str) -> str:
         return self.preprocess(text, standardize_social=False, handle_hashtags=False)
+
+    def normalize_entity(self, text: str) -> str:
+        if not text:
+            return ""
+        
+        # 1) Basic cleanup
+        s = self.normalize_unicode_nfc(text)
+        s = self.remove_links_mentions_emails(s)
+        
+        # 2) Punctuation filter (keep Latin/Digits/Space)
+        # Note: We keep some accents for French via NFC + regex but usually for normalization 
+        # we want to be quite aggressive. Here we keep standard Latin.
+        s = re.sub(r"[^A-Za-z0-9\sàâäéèêëîïôöùûüÿçÀÂÄÉÈÊËÎÏÔÖÙÛÜŸÇ]", " ", s)
+        
+        return self.normalize_whitespace(s).lower()
