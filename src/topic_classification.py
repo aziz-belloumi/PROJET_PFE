@@ -18,13 +18,18 @@ DEFAULT_TOPIC_PARAMS: Dict[str, Any] = {
 }
 
 CATEGORY_MAP: Dict[int, Dict[str, str]] = {
-    2: {"ar": "الرياضة",                 "fr": "Sports",                    "en": "Sports"},
-    3: {"ar": "السياسة",                 "fr": "Politique",                 "en": "Politics"},
-    4: {"ar": "العلوم والتكنولوجيا",      "fr": "Science et technologie",    "en": "Science and technology"},
-    5: {"ar": "الفنون والثقافة",          "fr": "Arts et culture",           "en": "Arts and culture"},
-    6: {"ar": "الاقتصاد",                "fr": "Économie",                  "en": "Economy"},
-    8: {"ar": "حرب ونزاع",               "fr": "Guerre et conflit",          "en": "War and conflict"},
-    7: {"ar": "عام",                     "fr": "Général",                  "en": "General"},
+    0: {"ar": "السياسة", "fr": "Politique", "en": "Politics"},
+    1: {"ar": "الاقتصاد", "fr": "Économie", "en": "Economy"},
+    2: {"ar": "الأمن", "fr": "Sécurité", "en": "Security"},
+    3: {"ar": "الطاقة", "fr": "Énergie", "en": "Energy"},
+    4: {"ar": "الدبلوماسية", "fr": "Diplomatie", "en": "Diplomacy"},
+    5: {"ar": "المجتمع", "fr": "Société", "en": "Society"},
+    6: {"ar": "النزاع", "fr": "Conflit", "en": "Conflict"},
+    7: {"ar": "الهجرة", "fr": "Migration", "en": "Migration"},
+    8: {"ar": "الانتخابات", "fr": "Élections", "en": "Elections"},
+    9: {"ar": "العدالة", "fr": "Justice", "en": "Justice"},
+    10: {"ar": "الصحة", "fr": "Santé", "en": "Health"},
+    11: {"ar": "الطقس", "fr": "Météo", "en": "Weather"},
 }
 
 

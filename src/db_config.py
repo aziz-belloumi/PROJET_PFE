@@ -64,11 +64,6 @@ class DatabaseConnection:
             raise
 
     def create_result_tables(self):
-        """
-        Supervisor structure + agreed addition:
-        - article_entities has model_version (0/1/2)
-        No extra columns beyond what we agreed.
-        """
         try:
             self.logger.info("Creating enriched tables...")
             with self.engine.connect() as conn:
@@ -90,9 +85,9 @@ class DatabaseConnection:
                     gpu_processing_time BIGINT,
 
                     PRIMARY KEY (article_id, model_version),
-                    INDEX idx_lang (language),
-                    INDEX idx_model (model_version)
-                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+                    INDEX idx_lang (language), /*Language index : for filtering by language*/
+                    INDEX idx_model (model_version) /*Model index : for filtering by model*/
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 /*InnoDB is the default MySQL engine*/
                 """))
 
                 # 2) entities dictionary
@@ -104,7 +99,7 @@ class DatabaseConnection:
                     normalized_name VARCHAR(255) NOT NULL,
                     frequency INT DEFAULT 0,
 
-                    UNIQUE KEY uq_entity (entity_type, normalized_name),
+                    UNIQUE KEY uq_entity (entity_type, normalized_name), /*This prevents duplicate entities of the same type.*/
                     INDEX idx_type (entity_type),
                     INDEX idx_norm (normalized_name),
                     INDEX idx_freq (frequency)
@@ -145,20 +140,20 @@ class DatabaseConnection:
 
                 conn.commit()
 
-            self.logger.info("Enriched tables created successfully.")
+            self.logger.info("Enriched jtables created successfully.")
         except Exception as e:
             self.logger.error(f"Error creating tables: {e}")
             raise
 
     def init_result_tables(self):
-        """Ensure enriched tables exist without dropping existing data."""
         self.create_result_tables()
 
     # ============================================================
     # Data Insert / Upsert Methods
     # ============================================================
 
-    def upsert_articles_enriched(
+    # Insert a new NLP analysis record for an article-model pair or update the existing one without overwriting non-null fields.
+    def upsert_articles_enriched( # is called an UPSERT (insert if new, update if existing)
         self,
         article_id: int,
         model_version: int,
@@ -198,14 +193,9 @@ class DatabaseConnection:
             "gtime": gpu_processing_time,
         })
 
+    # Find an existing entity by exact or fuzzy match (based on normalized name and type) and return its entity_id if similarity is high enough.
     def find_similar_entity(self, normalized_name: str, entity_type: str, threshold: float = 0.9) -> int | None:
-        """
-        Looks for an existing entity with the same type and a very similar normalized name.
-        Uses MySQL's string comparison or a simple exact match fallback if no fuzzy plugin.
-        Since we want Levenshtein-like behavior without external plugins, we use 
-        a list of recent similar and check top candidates.
-        """
-        # Exact match first (fast)
+    
         sql_exact = "SELECT entity_id FROM entities WHERE entity_type = :typ AND normalized_name = :norm LIMIT 1"
         res = self.execute_query(sql_exact, {"typ": entity_type, "norm": normalized_name})
         row = res.fetchone()
@@ -230,11 +220,9 @@ class DatabaseConnection:
         
         return None
 
+    # Insert a new entity if no similar one exists, otherwise return the existing entity_id.
     def upsert_entity(self, entity_name: str, entity_type: str, normalized_name: str) -> int:
-        """
-        Inserts or updates an entity with similarity-based deduplication.
-        """
-        # 1. Look for similar/exact entity first
+       
         existing_id = self.find_similar_entity(normalized_name, entity_type)
         if existing_id:
             return existing_id
@@ -250,11 +238,9 @@ class DatabaseConnection:
             entity_id = int(res.scalar())
             conn.commit()
         return entity_id
-
+    
+    # Update each entity's frequency based on the number of times it appears in article_entities.
     def update_entity_frequencies(self):
-        """
-        Calculates global frequency for each entity based on article_entities counts.
-        """
         self.logger.info("Computing global entity frequencies...")
         sql = """
         UPDATE entities e
@@ -267,6 +253,8 @@ class DatabaseConnection:
         """
         self.execute_query(sql)
 
+
+    # Inserts or updates an article-entity link with the highest confidence score
     def upsert_article_entity(
         self,
         article_id: int,
@@ -287,6 +275,7 @@ class DatabaseConnection:
             "conf": float(confidence_score) if confidence_score is not None else None,
         })
 
+    # Inserts or updates an article's topic and its score
     def upsert_article_topic(
         self,
         article_id: int,

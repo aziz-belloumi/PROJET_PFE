@@ -117,41 +117,15 @@ def _gpu_cleanup(logger: logging.Logger, cooldown_sec: float = 2.0):
 
 
 
-def parse_category_ids(val) -> list[int]:
-    if val is None:
-        return []
-    try:
-        if isinstance(val, float) and pd.isna(val):
-            return []
-    except Exception:
-        pass
-
-    if isinstance(val, int):
-        return [val]
-
-    s = str(val).strip()
-    if not s:
-        return []
-
-    parts = [p.strip() for p in s.split(",") if p.strip()]
-    out: list[int] = []
-    for p in parts:
-        try:
-            out.append(int(p))
-        except ValueError:
-            continue
-    return out
-
-
 def main():
     pipeline_t0 = time.perf_counter()
 
     # =========================
     # PARAMETERS
     # =========================
-    sample_size = 50
+    sample_size = 1000
     raw_table = getattr(Config, "RAW_TABLE", "article")
-    LANG_THRESHOLD = 0.60
+    LANG_THRESHOLD = 0.51
 
     CPU_DEVICE = -1
     GPU_DEVICE = 0
@@ -300,17 +274,6 @@ def main():
     df = pd.read_sql(query, engine)
     logger.info(f"Fetched {len(df)} unprocessed rows from {raw_table}")
 
-    cat_ref = pd.read_sql("SELECT id, label_en FROM category", engine)
-    cat_map = dict(zip(cat_ref["id"], cat_ref["label_en"]))
-
-    # Ensure category labels exist even if DB category table is incomplete
-    for cid, labels in CATEGORY_MAP.items():
-        try:
-            if isinstance(labels, dict) and "en" in labels:
-                cat_map.setdefault(int(cid), str(labels["en"]))
-        except Exception:
-            continue
-
     preproc = PreprocessRouter(logger=logger)
 
     df["text_raw"] = df["body"].fillna("")
@@ -337,11 +300,25 @@ def main():
     )
 
     supported_langs = set(NER_MODELS_BY_LANG.keys())
-    work_df = merged[(merged["lang"].isin(supported_langs)) & (merged["score"] >= LANG_THRESHOLD)].copy()
+    
+    valid_mask = (merged["lang"].isin(supported_langs)) & (merged["score"] >= LANG_THRESHOLD)
+    work_df = merged[valid_mask].copy()
+    skipped_df = merged[~valid_mask].copy()
+
     logger.info(
         f"Subset after lang filter (supported={sorted(supported_langs)} & score>={LANG_THRESHOLD}): "
-        f"{len(work_df)} rows"
+        f"{len(work_df)} rows valid, {len(skipped_df)} rows skipped permanently."
     )
+
+    # Mark skipped articles in the DB so they are not re-fetched in the next run
+    for r in skipped_df.itertuples(index=False):
+        db.upsert_articles_enriched(
+            article_id=int(r.id),
+            model_version=0,
+            language=str(r.lang),
+            sentiment_label="SKIPPED",
+            dominant_topic="UNSUPPORTED_LANG"
+        )
 
     if work_df.empty:
         logger.warning("No rows passed language filter; stopping.")
@@ -525,20 +502,16 @@ def main():
                 aid = int(r.id)
                 lang = str(r.lang)
 
-                expected_cat_ids = parse_category_ids(r.id_categories)
-                expected_cat_labels = [cat_map.get(cid, "Unknown") for cid in expected_cat_ids]
-
                 t0 = time.perf_counter()
                 tres = topic_gpu.predict(r.text_topic, lang=lang)
                 _cuda_sync_if_needed(GPU_DEVICE)
                 dt = time.perf_counter() - t0
 
+                logger.info(f"[GPU][TOPIC] aid={aid} pred_label={tres.label} pred_id={tres.category_id} score={tres.score:.4f}")
 
                 topic_results_buffer[aid] = {
                     "label": tres.label,
                     "score": float(tres.score),
-                    "expected_category_ids": expected_cat_ids,
-                    "expected_category_labels": expected_cat_labels,
                 }
 
                 db.upsert_article_topic(article_id=aid, topic_label=tres.label, topic_score=tres.score)

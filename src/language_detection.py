@@ -9,11 +9,11 @@ import fasttext
 
 @dataclass(frozen=True)
 class LanguageDetection:
-    lang: str          # "ar"
-    score: float       # confidence in [0, 1]
-    raw_label: str     # "__label__ar"
+    lang: str         
+    score: float       
+    raw_label: str    
 
-
+# Detects text language with optional preprocessing
 class FastTextLanguageDetector:
 
 
@@ -42,11 +42,9 @@ class FastTextLanguageDetector:
 
     @staticmethod
     def _normalize_label(raw_label: str) -> str:
-        # "__label__ar" -> "ar"
         return raw_label.replace("__label__", "").strip()
 
     def detect(self, text: str, k: int = 1) -> LanguageDetection:
-        # Use title+body concatenation at call site for best accuracy.
         
         if not text or not isinstance(text, str):
             return LanguageDetection(lang="unk", score=0.0, raw_label="__label__unk")
@@ -74,8 +72,5 @@ class FastTextLanguageDetector:
         return LanguageDetection(lang=lang, score=score, raw_label=raw_label)
 
     def is_arabic(self, text: str, threshold: float = 0.60) -> Tuple[bool, LanguageDetection]:
-        """
-        Convenience helper: returns (is_arabic, result)
-        """
         res = self.detect(text)
         return (res.lang == "ar" and res.score >= threshold), res

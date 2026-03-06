@@ -12,7 +12,6 @@ from transformers import AutoTokenizer, AutoModelForTokenClassification, pipelin
 DEFAULT_MODEL_REGISTRY: Dict[int, str] = {
     0: "arabert",
     1: "camel",
-    # 2 removed (mbert removed from the project)
 }
 
 
@@ -28,8 +27,7 @@ DEFAULT_NER_PARAMS: Dict[str, Any] = {
     "expand_max_len": 3,
 }
 
-# Unified label mapping to your internal codes:
-# PER, ORG, LOC, DAT, EVE, MIS, PRO, COM
+# Unified label mapping:
 LABEL_UNIFICATION = {
     # --------------------
     # PERSON
@@ -169,16 +167,6 @@ class NEREntity:
 
 
 class TransformersNER:
-    """
-    Robust NER extractor with:
-    - token-based chunking (offset_mapping)
-    - score filtering
-    - short/noise filtering
-    - word-boundary expansion for short entities
-    - merge adjacent entities
-    - deduplication
-    - label unification (PER/ORG/LOC/DAT/EVE/MIS/PRO/COM)
-    """
 
     _MERGE_GAP_ALLOWED_CHARS = set(" \t\r\n" + ".,،؛:!?-–—ـ/\\()[]{}\"'")
     _BOUNDARY_CHARS = set(" \t\r\n" + ".,،؛:!?-–—/\\()[]{}\"'")
@@ -246,40 +234,25 @@ class TransformersNER:
             f"score_threshold={self.score_threshold}"
         )
 
-    @staticmethod
+    @staticmethod # Normalizes labels to PER, ORG, LOC, DAT, EVE, MIS, PRO, COM
     def _normalize_label(label: str) -> str:
-        """
-        Unify label to internal code. Handles:
-        - raw labels like 'PERSON', 'ORG', 'LOCATION', ...
-        - BIO labels like 'B-PER', 'I-ORG'
-        """
         raw = (label or "UNK").upper().strip()
-
-        # Normalize common BIO prefixes (defensive)
-        # If label comes like "B-PERSON" or "I-ORG", we keep it as-is for mapping
-        # but also try the stripped version if not found.
         if raw in LABEL_UNIFICATION:
             return LABEL_UNIFICATION[raw]
-
-        # Try removing BIO prefix if present
         if raw.startswith("B-") or raw.startswith("I-"):
             stripped = raw[2:]
             if stripped in LABEL_UNIFICATION:
                 return LABEL_UNIFICATION[stripped]
             raw = stripped
-
-        # Final attempt
         if raw in LABEL_UNIFICATION:
             return LABEL_UNIFICATION[raw]
-
-        # Fallback: first 3 letters
         return raw[:3] if len(raw) >= 3 else raw
 
-    @staticmethod
+    @staticmethod # Simple cleanup: strip whitespace and avoid None.
     def _strip_weird(text: str) -> str:
         return (text or "").strip()
 
-    @staticmethod
+    @staticmethod # Filter out entities that are empty, too short, or only long dashes.
     def _is_valid_entity_text(t: str) -> bool:
         if not t:
             return False
@@ -290,12 +263,14 @@ class TransformersNER:
             return False
         return True
 
+    # Return the minimum length required for this label type.
     def _min_len_for_label(self, label: str) -> int:
         l = self._normalize_label(label)
         if l == "PER":
             return self.min_len_person
         return self.min_len_other
 
+    # Validates if two entities can be merged based on gap characters
     def _gap_is_mergeable(self, gap: str) -> bool:
         if gap is None or gap == "":
             return True
@@ -304,6 +279,7 @@ class TransformersNER:
                 return False
         return True
 
+    # Split text into manageable chunks with overlap to respect tokenizer limits
     def _token_chunks(self, text: str) -> List[Dict[str, Any]]:
         enc = self.tokenizer(
             text,
@@ -340,6 +316,7 @@ class TransformersNER:
 
         return chunks
 
+    # Expand entity to full word boundaries using boundary characters
     def _expand_to_word_boundaries(self, base_text: str, start: int, end: int) -> Tuple[int, int, str]:
         n = len(base_text)
         if not (0 <= start < end <= n):
@@ -364,6 +341,7 @@ class TransformersNER:
 
         return s, e, expanded
 
+    # Merge adjacent entities of the same label if gap is mergeable or linker words are present
     def _merge_adjacent(self, entities: List[NEREntity], base_text: str) -> List[NEREntity]:
         if not entities:
             return []
@@ -415,7 +393,7 @@ class TransformersNER:
 
         return merged
 
-    @staticmethod
+    @staticmethod # Removes duplicate entities keeping the best scoring one
     def _deduplicate(entities: List[NEREntity]) -> List[NEREntity]:
         best: Dict[Tuple[int, int, str], NEREntity] = {}
         for e in entities:
@@ -424,6 +402,7 @@ class TransformersNER:
                 best[key] = e
         return list(best.values())
 
+    # Runs full NER pipeline and returns sorted list of entities
     def predict(self, text: str) -> List[NEREntity]:
         if not text or not isinstance(text, str):
             return []

@@ -25,10 +25,6 @@ class SentimentResult:
 
 
 class TransformersSentiment:
-    """
-    Sentiment classifier with token-based chunking + aggregation.
-    probs_normalizer standardizes label keys to POS/NEG/NEU[/MIX].
-    """
 
     def __init__(
         self,
