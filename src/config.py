@@ -75,6 +75,14 @@ class Config:
     # Topic Classification 
     TOPIC_MODEL = "joeddav/xlm-roberta-large-xnli"
 
+    # ========================================
+    # Pipeline Runtime Parameters
+    # ========================================
+    LANG_THRESHOLD    = _getenv("LANG_THRESHOLD",    0.51, float)
+    CPU_DEVICE        = _getenv("CPU_DEVICE",        -1,   int)
+    GPU_DEVICE        = _getenv("GPU_DEVICE",         0,   int)
+    GPU_COOLDOWN_SEC  = _getenv("GPU_COOLDOWN_SEC",  1.0,  float)
+
 
 
     # ========================================

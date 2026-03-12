@@ -8,6 +8,8 @@ import logging
 import torch
 from transformers import AutoTokenizer, AutoModelForTokenClassification, pipeline
 
+from src.chunking import token_chunks
+
 
 DEFAULT_MODEL_REGISTRY: Dict[int, str] = {
     0: "arabert",
@@ -281,40 +283,12 @@ class TransformersNER:
 
     # Split text into manageable chunks with overlap to respect tokenizer limits
     def _token_chunks(self, text: str) -> List[Dict[str, Any]]:
-        enc = self.tokenizer(
-            text,
-            return_offsets_mapping=True,
-            add_special_tokens=False,
-            truncation=False,
-        )
-
-        input_ids = enc.get("input_ids", [])
-        offsets: List[Tuple[int, int]] = enc.get("offset_mapping", [])
-
-        if not input_ids or not offsets:
-            return []
-
-        chunks = []
-        i = 0
-        n = len(input_ids)
-
-        while i < n:
-            j = min(i + self._safe_max_tokens, n)
-            start_char = offsets[i][0]
-            end_char = offsets[j - 1][1]
-
-            if end_char <= start_char:
-                i = j
-                continue
-
-            chunks.append({"chunk": text[start_char:end_char], "offset": start_char})
-
-            if j == n:
-                break
-
-            i = max(0, j - self.overlap_tokens)
-
-        return chunks
+        return [
+            {"chunk": chunk_text, "offset": offset}
+            for chunk_text, offset in token_chunks(
+                text, self.tokenizer, self._safe_max_tokens, self.overlap_tokens
+            )
+        ]
 
     # Expand entity to full word boundaries using boundary characters
     def _expand_to_word_boundaries(self, base_text: str, start: int, end: int) -> Tuple[int, int, str]:

@@ -29,43 +29,6 @@ def _make_expanding_in_clause(base_sql: str, param_name: str = "ids"):
     return text(base_sql).bindparams(bindparam(param_name, expanding=True))
 
 
-def _entities_to_string(rows: pd.DataFrame, max_items: int = 80, include_freq: bool = True) -> str:
-    """
-    Convert entity rows to a compact string like:
-      "PER:john (0.91, f=120); ORG:un (0.88, f=55); ..."
-    Expects columns: entity_type, normalized_name, confidence_score, frequency(optional)
-    """
-    if rows is None or rows.empty:
-        return ""
-
-    r = rows.copy()
-    r["confidence_score"] = pd.to_numeric(r.get("confidence_score"), errors="coerce").fillna(0.0)
-    if include_freq and "frequency" in r.columns:
-        r["frequency"] = pd.to_numeric(r.get("frequency"), errors="coerce")
-    else:
-        r["frequency"] = None
-
-    # Sort high confidence first (then by frequency if available)
-    r = r.sort_values(
-        ["confidence_score", "frequency", "entity_type", "normalized_name"],
-        ascending=[False, False, True, True],
-        na_position="last",
-    )
-
-    items = []
-    for _, x in r.head(max_items).iterrows():
-        if include_freq and pd.notna(x.get("frequency")):
-            items.append(
-                f"{x['entity_type']}:{x['normalized_name']} ({float(x['confidence_score']):.2f}, f={int(x['frequency'])})"
-            )
-        else:
-            items.append(f"{x['entity_type']}:{x['normalized_name']} ({float(x['confidence_score']):.2f})")
-
-    more = len(r) - min(len(r), max_items)
-    if more > 0:
-        items.append(f"... +{more} more")
-
-    return "; ".join(items)
 
 
 def _pick_language_per_article(sent_long: pd.DataFrame) -> pd.DataFrame:
@@ -167,12 +130,16 @@ def main(n_ar: int = 200, n_en: int = 100, raw_table: str = "article") -> Path |
     sent_sql = _make_expanding_in_clause("""
         SELECT
             article_id,
-            model_version,
             language,
+            model_version,
             sentiment_label,
             sentiment_score,
-            cpu_processing_time,
-            gpu_processing_time,
+            cpu_time_ner,
+            cpu_time_sentiment,
+            cpu_time_topic,
+            gpu_time_ner,
+            gpu_time_sentiment,
+            gpu_time_topic,
             dominant_topic
         FROM articles_enriched
         WHERE article_id IN :ids
@@ -204,77 +171,11 @@ def main(n_ar: int = 200, n_en: int = 100, raw_table: str = "article") -> Path |
         sent_wide = pd.DataFrame({"article_id": ids})
 
     # ---------------------------------------------------------------------
-    # 5) Load entities (long), aggregate into compact strings (union + per model)
-    # ---------------------------------------------------------------------
-    ent_sql = _make_expanding_in_clause("""
-        SELECT
-            ae.article_id,
-            ae.model_version,
-            ae.confidence_score,
-            e.entity_type,
-            e.entity_name,
-            e.normalized_name,
-            e.frequency
-        FROM article_entities ae
-        JOIN entities e ON e.entity_id = ae.entity_id
-        WHERE ae.article_id IN :ids
-    """)
-    ent_long = pd.read_sql(ent_sql, engine, params={"ids": ids})
-
-    if not ent_long.empty:
-        ent_long["model_version"] = pd.to_numeric(ent_long["model_version"], errors="coerce")
-        ent_long = ent_long.dropna(subset=["model_version"]).copy()
-        ent_long["model_version"] = ent_long["model_version"].astype(int)
-
-        ent_long["entity_type"] = ent_long["entity_type"].astype(str).str.upper().str.strip()
-        ent_long["normalized_name"] = ent_long["normalized_name"].astype(str).str.strip()
-        ent_long["confidence_score"] = pd.to_numeric(ent_long["confidence_score"], errors="coerce")
-        ent_long["frequency"] = pd.to_numeric(ent_long.get("frequency"), errors="coerce")
-
-        # Deduplicate within article+model+entity key (keep max confidence and max frequency)
-        ent_dedup = (
-            ent_long.groupby(
-                ["article_id", "model_version", "entity_type", "normalized_name"],
-                as_index=False
-            )
-            .agg(
-                confidence_score=("confidence_score", "max"),
-                frequency=("frequency", "max"),
-            )
-        )
-
-        per_model_str = (
-            ent_dedup.groupby(["article_id", "model_version"])
-                    .apply(lambda g: pd.Series({
-                        "entities_count": int(len(g)),
-                        "entities_list": _entities_to_string(g, max_items=80, include_freq=True),
-                    }), include_groups=False)
-                    .reset_index()
-        )
-
-        # Pivot entities per model_version -> entities_mv0/entities_mv1...
-        ent_list_wide = per_model_str.pivot_table(
-            index="article_id", columns="model_version", values="entities_list", aggfunc="first"
-        )
-        ent_count_wide = per_model_str.pivot_table(
-            index="article_id", columns="model_version", values="entities_count", aggfunc="first"
-        )
-
-        ent_list_wide.columns = [f"entities_mv{c}" for c in ent_list_wide.columns]
-        ent_count_wide.columns = [f"entities_count_mv{c}" for c in ent_count_wide.columns]
-
-        ent_wide = pd.concat([ent_list_wide, ent_count_wide], axis=1).reset_index()
-
-    else:
-        ent_wide = pd.DataFrame({"article_id": ids})
-
-    # ---------------------------------------------------------------------
     # 6) Merge everything into one article-level dataset
     # ---------------------------------------------------------------------
     out = articles.merge(topics, on="article_id", how="left")
     out = out.merge(lang_per_article, on="article_id", how="left")
     out = out.merge(sent_wide, on="article_id", how="left")
-    out = out.merge(ent_wide, on="article_id", how="left")
 
     # Nice ordering
     front = [
@@ -303,20 +204,15 @@ def main(n_ar: int = 200, n_en: int = 100, raw_table: str = "article") -> Path |
         c for c in out.columns if c.startswith("sentiment") and c != "sentiment_verdict"
     ]
     
-    ent_cols = ["article_id", "language", "body", "true_prediction"] + [c for c in out.columns if c.startswith("entities")]
-
     out_topic = out_dir / "manual_eval_sample_topic.csv"
     out_sent = out_dir / "manual_eval_sample_sentiment.csv"
-    out_ent = out_dir / "manual_eval_sample_entities.csv"
 
     out[topic_cols].to_csv(out_topic, index=False, encoding="utf-8-sig", quoting=csv.QUOTE_MINIMAL)
     out[sent_cols].to_csv(out_sent, index=False, encoding="utf-8-sig", quoting=csv.QUOTE_MINIMAL)
-    out[ent_cols].to_csv(out_ent, index=False, encoding="utf-8-sig", quoting=csv.QUOTE_MINIMAL)
 
     db.close()
     print(f"Saved: {out_topic}")
     print(f"Saved: {out_sent}")
-    print(f"Saved: {out_ent}")
     return out_topic
 
 

@@ -24,11 +24,19 @@ def run_timing_comparison(engine) -> pd.DataFrame:
     query = """
         SELECT
             model_version,
-            cpu_processing_time,
-            gpu_processing_time
+            cpu_time_ner,
+            cpu_time_sentiment,
+            cpu_time_topic,
+            gpu_time_ner,
+            gpu_time_sentiment,
+            gpu_time_topic
         FROM articles_enriched
-        WHERE cpu_processing_time IS NOT NULL
-           OR gpu_processing_time IS NOT NULL
+        WHERE cpu_time_ner IS NOT NULL
+           OR gpu_time_ner IS NOT NULL
+           OR cpu_time_sentiment IS NOT NULL
+           OR gpu_time_sentiment IS NOT NULL
+           OR cpu_time_topic IS NOT NULL
+           OR gpu_time_topic IS NOT NULL
     """
     df = pd.read_sql(query, engine)
     logger.info(f"[timing_comparison] Loaded {len(df)} rows from articles_enriched")
@@ -38,8 +46,16 @@ def run_timing_comparison(engine) -> pd.DataFrame:
         return pd.DataFrame()
 
     # Convert milliseconds -> seconds
-    df["cpu_sec"] = pd.to_numeric(df["cpu_processing_time"], errors="coerce") / 1000.0
-    df["gpu_sec"] = pd.to_numeric(df["gpu_processing_time"], errors="coerce") / 1000.0
+    for t_col in ["cpu_time_ner", "cpu_time_sentiment", "cpu_time_topic", "gpu_time_ner", "gpu_time_sentiment", "gpu_time_topic"]:
+        df[t_col] = pd.to_numeric(df[t_col], errors="coerce") / 1000.0
+
+    df["cpu_sec"] = df[["cpu_time_ner", "cpu_time_sentiment", "cpu_time_topic"]].sum(axis=1, skipna=True)
+    df["gpu_sec"] = df[["gpu_time_ner", "gpu_time_sentiment", "gpu_time_topic"]].sum(axis=1, skipna=True)
+
+    # If all components are NaN, the sum will be 0.0, which we should revert to NA to avoid skews
+    df.loc[df[["cpu_time_ner", "cpu_time_sentiment", "cpu_time_topic"]].isna().all(axis=1), "cpu_sec"] = pd.NA
+    df.loc[df[["gpu_time_ner", "gpu_time_sentiment", "gpu_time_topic"]].isna().all(axis=1), "gpu_sec"] = pd.NA
+
     df["model_version"] = pd.to_numeric(df["model_version"], errors="coerce").dropna().astype(int)
 
     rows = []
@@ -47,6 +63,12 @@ def run_timing_comparison(engine) -> pd.DataFrame:
         mv = int(mv)
         cpu = g["cpu_sec"].dropna()
         gpu = g["gpu_sec"].dropna()
+        c_ner = g["cpu_time_ner"].dropna()
+        c_sent = g["cpu_time_sentiment"].dropna()
+        c_top = g["cpu_time_topic"].dropna()
+        g_ner = g["gpu_time_ner"].dropna()
+        g_sent = g["gpu_time_sentiment"].dropna()
+        g_top = g["gpu_time_topic"].dropna()
 
         def _stats(s: pd.Series, prefix: str) -> dict:
             if s.empty:
@@ -66,12 +88,18 @@ def run_timing_comparison(engine) -> pd.DataFrame:
             "model_name":    MODEL_NAME_MAP.get(mv, "unknown"),
             "articles_count": int(len(g)),
         }
-        row.update(_stats(cpu, "cpu"))
-        row.update(_stats(gpu, "gpu"))
+        row.update(_stats(cpu, "cpu_total"))
+        row.update(_stats(gpu, "gpu_total"))
+        row.update(_stats(c_ner, "cpu_ner"))
+        row.update(_stats(g_ner, "gpu_ner"))
+        row.update(_stats(c_sent, "cpu_sent"))
+        row.update(_stats(g_sent, "gpu_sent"))
+        row.update(_stats(c_top, "cpu_top"))
+        row.update(_stats(g_top, "gpu_top"))
 
         # Speedup: how many times faster GPU is vs CPU (per article mean)
-        c_mean = row.get("cpu_mean_per_article")
-        g_mean = row.get("gpu_mean_per_article")
+        c_mean = row.get("cpu_total_mean_per_article")
+        g_mean = row.get("gpu_total_mean_per_article")
         if c_mean and g_mean and float(g_mean) > 0:
             row["speedup_cpu_over_gpu"] = round(float(c_mean) / float(g_mean), 3)
         else:

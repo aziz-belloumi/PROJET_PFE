@@ -9,6 +9,8 @@ import logging
 import torch
 from transformers import AutoTokenizer, AutoModelForSequenceClassification, pipeline
 
+from src.chunking import token_chunks
+
 
 DEFAULT_SENTIMENT_PARAMS: Dict[str, Any] = {
     "max_chunk_tokens": 450,
@@ -81,36 +83,7 @@ class TransformersSentiment:
         return self.preprocessor.preprocess(text)
 
     def _token_chunks(self, text: str) -> List[Tuple[str, int]]:
-        enc = self.tokenizer(
-            text,
-            return_offsets_mapping=True,
-            add_special_tokens=False,
-            truncation=False,
-        )
-        input_ids = enc.get("input_ids", [])
-        offsets = enc.get("offset_mapping", [])
-        if not input_ids or not offsets:
-            return []
-
-        chunks: List[Tuple[str, int]] = []
-        i = 0
-        n = len(input_ids)
-
-        while i < n:
-            j = min(i + self._safe_max_tokens, n)
-            start_char = offsets[i][0]
-            end_char = offsets[j - 1][1]
-            if end_char <= start_char:
-                i = j
-                continue
-
-            chunks.append((text[start_char:end_char], start_char))
-
-            if j == n:
-                break
-            i = max(0, j - self.overlap_tokens)
-
-        return chunks
+        return token_chunks(text, self.tokenizer, self._safe_max_tokens, self.overlap_tokens)
 
     def _all_scores(self, chunk_text: str) -> List[Dict[str, float]]:
         try:

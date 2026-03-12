@@ -11,6 +11,7 @@ from src.db_config import DatabaseConnection
 from comparison.ner_comparison import run_ner_comparison
 from comparison.sentiment_comparison import run_sentiment_comparison
 from comparison.timing_comparison import run_timing_comparison
+import pandas as pd
 
 
 def _setup_comparison_logger(run_dir: Path) -> logging.Logger:
@@ -59,16 +60,35 @@ def generate_comparison_report(
     logger = _setup_comparison_logger(run_dir)
     logger.info(f"Comparison output directory: {run_dir.resolve()}")
 
+    def _concatenate_reports(ner_df: pd.DataFrame, sent_df: pd.DataFrame, time_df: pd.DataFrame, run_dir: Path):
+        try:
+
+            # Add a clear column to identify which comparison the row belongs to
+            ner_df.insert(0, "Report_Type", "NER")
+            sent_df.insert(0, "Report_Type", "SENTIMENT")
+            time_df.insert(0, "Report_Type", "TIMING")
+
+            # Concatenate them vertically (axis=0) preserving all structure and rows
+            merged = pd.concat([ner_df, sent_df, time_df], axis=0, ignore_index=True)
+
+            out_path = run_dir / "merged_comparison.csv"
+            merged.to_csv(out_path, index=False, encoding="utf-8-sig")
+            logger.info(f"Successfully concatenated comparison reports vertically into {out_path.name}")
+        except Exception as e:
+            logger.exception(f"Failed to concatenate comparison reports vertically: {e}")
+
+
     db = DatabaseConnection(logger=logger)
     engine = db.get_engine()
+
+    ner_df = pd.DataFrame()
+    sent_df = pd.DataFrame()
+    time_df = pd.DataFrame()
 
     # ---- NER ----
     try:
         logger.info("Running NER comparison...")
         ner_df = run_ner_comparison(engine)
-        ner_path = run_dir / "ner_comparison.csv"
-        ner_df.to_csv(ner_path, index=False, encoding="utf-8-sig")
-        logger.info(f"Saved: {ner_path} | rows={len(ner_df)}")
     except Exception as e:
         logger.exception(f"NER comparison failed: {e}")
 
@@ -76,23 +96,22 @@ def generate_comparison_report(
     try:
         logger.info("Running sentiment comparison...")
         sent_df = run_sentiment_comparison(engine)
-        sent_path = run_dir / "sentiment_comparison.csv"
-        sent_df.to_csv(sent_path, index=False, encoding="utf-8-sig")
-        logger.info(f"Saved: {sent_path} | rows={len(sent_df)}")
     except Exception as e:
         logger.exception(f"Sentiment comparison failed: {e}")
 
     # ---- Timing (reads from articles_enriched, cumulative across all runs) ----
     try:
         logger.info("Running timing comparison...")
-        timing_df = run_timing_comparison(engine)
-        timing_path = run_dir / "timing_comparison.csv"
-        timing_df.to_csv(timing_path, index=False, encoding="utf-8-sig")
-        logger.info(f"Saved: {timing_path} | rows={len(timing_df)}")
+        time_df = run_timing_comparison(engine)
     except Exception as e:
         logger.exception(f"Timing comparison failed: {e}")
 
     db.close()
+
+    # ---- Concatenate all three reports vertically ----
+    logger.info("Concatenating individual comparison reports vertically (in memory only)...")
+    _concatenate_reports(ner_df, sent_df, time_df, run_dir)
+    
     logger.info("Comparison report generation finished.")
     return run_dir
 

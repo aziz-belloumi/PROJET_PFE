@@ -1,0 +1,38 @@
+﻿Task,Category,Metric,Value,Note
+Topic,Overall,Total Evaluated,300,
+Topic,Overall,Correct,156,
+Topic,Overall,Accuracy (%),52.0,
+Topic,Language: ar,Accuracy (%),50.0,200 articles
+Topic,Language: en,Accuracy (%),56.0,100 articles
+Topic,Label: Conflict,Accuracy (%),44.7,47 articles
+Topic,Label: Economy,Accuracy (%),88.9,9 articles
+Topic,Label: Elections,Accuracy (%),100.0,8 articles
+Topic,Label: Energy,Accuracy (%),40.0,5 articles
+Topic,Label: Health,Accuracy (%),33.3,3 articles
+Topic,Label: Justice,Accuracy (%),50.0,6 articles
+Topic,Label: Politics,Accuracy (%),85.7,14 articles
+Topic,Label: Security,Accuracy (%),14.3,7 articles
+Topic,Label: Weather,Accuracy (%),0.0,1 articles
+Topic,Label: الأمن,Accuracy (%),75.0,16 articles
+Topic,Label: الاقتصاد,Accuracy (%),54.5,11 articles
+Topic,Label: الانتخابات,Accuracy (%),96.0,25 articles
+Topic,Label: السياسة,Accuracy (%),100.0,21 articles
+Topic,Label: الصحة,Accuracy (%),64.3,14 articles
+Topic,Label: الطاقة,Accuracy (%),11.8,17 articles
+Topic,Label: الطقس,Accuracy (%),25.0,8 articles
+Topic,Label: العدالة,Accuracy (%),0.0,1 articles
+Topic,Label: النزاع,Accuracy (%),27.6,87 articles
+,,,,
+Sentiment,Overall,Total Evaluated,300,
+Sentiment,Overall,Correct,111,
+Sentiment,Overall,Accuracy (%),37.0,
+Sentiment,Language: ar,Accuracy (%),52.5,200 articles
+Sentiment,Language: en,Accuracy (%),6.0,100 articles
+Sentiment,Label: MIX,Accuracy (%),0.0,1 articles
+Sentiment,Label: NEG,Accuracy (%),66.7,21 articles
+Sentiment,Label: NEU,Accuracy (%),47.6,166 articles
+Sentiment,Label: POS,Accuracy (%),100.0,12 articles
+,,,,
+Recommendation,Best Performing,Model Task,Topic Classification,Topic accuracy (52.0%) is higher than Sentiment accuracy (37.0%)
+Recommendation,Weak Topic Labels (<60%),Labels,"Conflict, Energy, Health, Justice, Security, Weather, الاقتصاد, الطاقة, الطقس, العدالة, النزاع",Consider improving training data for these topics
+Recommendation,Weak Sentiment Labels (<60%),Labels,"MIX, NEU",Consider improving training data for these sentiments

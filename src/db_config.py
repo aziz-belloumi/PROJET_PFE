@@ -81,8 +81,12 @@ class DatabaseConnection:
 
                     dominant_topic VARCHAR(100),
 
-                    cpu_processing_time BIGINT,
-                    gpu_processing_time BIGINT,
+                    cpu_time_ner BIGINT,
+                    cpu_time_sentiment BIGINT,
+                    cpu_time_topic BIGINT,
+                    gpu_time_ner BIGINT,
+                    gpu_time_sentiment BIGINT,
+                    gpu_time_topic BIGINT,
 
                     PRIMARY KEY (article_id, model_version),
                     INDEX idx_lang (language), /*Language index : for filtering by language*/
@@ -94,9 +98,9 @@ class DatabaseConnection:
                 conn.execute(text("""
                 CREATE TABLE IF NOT EXISTS entities (
                     entity_id BIGINT AUTO_INCREMENT PRIMARY KEY,
-                    entity_name VARCHAR(255) NOT NULL,
+                    entity_name VARCHAR(1024) NOT NULL,
                     entity_type VARCHAR(20) NOT NULL,
-                    normalized_name VARCHAR(255) NOT NULL,
+                    normalized_name VARCHAR(512) NOT NULL,
                     frequency INT DEFAULT 0,
 
                     UNIQUE KEY uq_entity (entity_type, normalized_name), /*This prevents duplicate entities of the same type.*/
@@ -161,26 +165,38 @@ class DatabaseConnection:
         sentiment_label: str | None = None,
         sentiment_score: float | None = None,
         dominant_topic: str | None = None,
-        cpu_processing_time: int | None = None,
-        gpu_processing_time: int | None = None,
+        cpu_time_ner: int | None = None,
+        cpu_time_sentiment: int | None = None,
+        cpu_time_topic: int | None = None,
+        gpu_time_ner: int | None = None,
+        gpu_time_sentiment: int | None = None,
+        gpu_time_topic: int | None = None,
     ):
         sql = """
         INSERT INTO articles_enriched (
             article_id, model_version, language,
             sentiment_label, sentiment_score,
-            dominant_topic, cpu_processing_time, gpu_processing_time
+            dominant_topic, 
+            cpu_time_ner, cpu_time_sentiment, cpu_time_topic,
+            gpu_time_ner, gpu_time_sentiment, gpu_time_topic
         ) VALUES (
             :aid, :mv, :lang,
             :s_lbl, :s_sc,
-            :topic, :ctime, :gtime
+            :topic, 
+            :ct_ner, :ct_sent, :ct_top,
+            :gt_ner, :gt_sent, :gt_top
         )
         ON DUPLICATE KEY UPDATE
             language = COALESCE(VALUES(language), language),
             sentiment_label = COALESCE(VALUES(sentiment_label), sentiment_label),
             sentiment_score = COALESCE(VALUES(sentiment_score), sentiment_score),
             dominant_topic = COALESCE(VALUES(dominant_topic), dominant_topic),
-            cpu_processing_time = COALESCE(VALUES(cpu_processing_time), cpu_processing_time),
-            gpu_processing_time = COALESCE(VALUES(gpu_processing_time), gpu_processing_time)
+            cpu_time_ner = COALESCE(VALUES(cpu_time_ner), cpu_time_ner),
+            cpu_time_sentiment = COALESCE(VALUES(cpu_time_sentiment), cpu_time_sentiment),
+            cpu_time_topic = COALESCE(VALUES(cpu_time_topic), cpu_time_topic),
+            gpu_time_ner = COALESCE(VALUES(gpu_time_ner), gpu_time_ner),
+            gpu_time_sentiment = COALESCE(VALUES(gpu_time_sentiment), gpu_time_sentiment),
+            gpu_time_topic = COALESCE(VALUES(gpu_time_topic), gpu_time_topic)
         """
         self.execute_query(sql, {
             "aid": int(article_id),
@@ -189,13 +205,21 @@ class DatabaseConnection:
             "s_lbl": sentiment_label,
             "s_sc": sentiment_score,
             "topic": dominant_topic,
-            "ctime": cpu_processing_time,
-            "gtime": gpu_processing_time,
+            "ct_ner": cpu_time_ner,
+            "ct_sent": cpu_time_sentiment,
+            "ct_top": cpu_time_topic,
+            "gt_ner": gpu_time_ner,
+            "gt_sent": gpu_time_sentiment,
+            "gt_top": gpu_time_topic,
         })
 
     # Find an existing entity by exact or fuzzy match (based on normalized name and type) and return its entity_id if similarity is high enough.
     def find_similar_entity(self, normalized_name: str, entity_type: str, threshold: float = 0.9) -> int | None:
     
+        # Enforce length limits mathematically tied to DB schema
+        normalized_name = normalized_name[:512] if normalized_name else normalized_name
+        entity_type = entity_type[:20] if entity_type else entity_type
+
         sql_exact = "SELECT entity_id FROM entities WHERE entity_type = :typ AND normalized_name = :norm LIMIT 1"
         res = self.execute_query(sql_exact, {"typ": entity_type, "norm": normalized_name})
         row = res.fetchone()
@@ -223,6 +247,11 @@ class DatabaseConnection:
     # Insert a new entity if no similar one exists, otherwise return the existing entity_id.
     def upsert_entity(self, entity_name: str, entity_type: str, normalized_name: str) -> int:
        
+        # Enforce DB length limits
+        entity_name = entity_name[:1024] if entity_name else entity_name
+        entity_type = entity_type[:20] if entity_type else entity_type
+        normalized_name = normalized_name[:512] if normalized_name else normalized_name
+
         existing_id = self.find_similar_entity(normalized_name, entity_type)
         if existing_id:
             return existing_id
