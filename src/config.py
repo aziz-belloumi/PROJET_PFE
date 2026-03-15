@@ -64,7 +64,8 @@ class Config:
 
     # English 
     EN_NER_MODEL = "dslim/bert-base-NER"
-    EN_SENTIMENT_MODEL = "cardiffnlp/twitter-roberta-base-sentiment-latest"
+    # EN_SENTIMENT_MODEL = "cardiffnlp/twitter-roberta-base-sentiment-latest"
+    EN_SENTIMENT_MODEL = "mrm8488/distilroberta-finetuned-financial-news-sentiment-analysis"
 
     # French 
     FR_NER_MODEL = "Jean-Baptiste/camembert-ner"
@@ -73,7 +74,10 @@ class Config:
 
 
     # Topic Classification 
-    TOPIC_MODEL = "joeddav/xlm-roberta-large-xnli"
+    TOPIC_MODEL_1 = "joeddav/xlm-roberta-large-xnli"
+    TOPIC_MODEL_2 = "MoritzLaurer/mDeBERTa-v3-base-mnli-xnli" 
+    TOPIC_MODEL_3 = "MoritzLaurer/mDeBERTa-v3-base-xnli-multilingual-nli-2mil7"
+    TOPIC_MODEL_4 = "MoritzLaurer/DeBERTa-v3-large-mnli-fever-anli-ling-wanli"
 
     # ========================================
     # Pipeline Runtime Parameters

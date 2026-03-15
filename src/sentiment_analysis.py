@@ -183,6 +183,19 @@ def probs_norm_3class_posnegneu(raw_probs: Dict[str, float]) -> Dict[str, float]
     }
 
 
+def probs_norm_3class_financial(raw_probs: Dict[str, float]) -> Dict[str, float]:
+    """
+    Mapping for financial sentiment:
+      positive/negative/neutral -> POS/NEG/NEU 
+    """
+    p = {k.strip().lower(): float(v) for k, v in raw_probs.items()}
+    return {
+        "POS": p.get("positive", 0.0),
+        "NEG": p.get("negative", 0.0),
+        "NEU": p.get("neutral", 0.0),
+    }
+
+
 # Backward-compatible alias (your main may still import this name)
 def probs_norm_camel_3class(raw_probs: Dict[str, float]) -> Dict[str, float]:
     return probs_norm_3class_posnegneu(raw_probs)

@@ -28,7 +28,7 @@ from src.config import Config
 from src.db_config import DatabaseConnection
 from src.ner_extraction import TransformersNER, DEFAULT_NER_PARAMS
 from src.sentiment_analysis import TransformersSentiment, DEFAULT_SENTIMENT_PARAMS
-from src.topic_classification import TransformersTopic, DEFAULT_TOPIC_PARAMS
+from src.topic_classification import TransformersTopic, DEFAULT_TOPIC_PARAMS, CATEGORY_DISPLAY
 from src.preprocessing import PreprocessRouter
 
 
@@ -181,9 +181,13 @@ def run_gpu_pass(
             _cuda_sync(gpu_device)
             gpu_time_topic_ms[aid] = int((time.perf_counter() - t0) * 1000)
 
-            logger.info(f"[GPU][TOPIC] aid={aid} pred_label={tres.label} pred_id={tres.category_id} score={tres.score:.4f}")
-            topic_results_buffer[aid] = {"label": tres.label, "score": float(tres.score)}
-            db.upsert_article_topic(article_id=aid, topic_label=tres.label, topic_score=tres.score)
+            # logger.info(f"[GPU][TOPIC] aid={aid} pred_label={tres.label} pred_id={tres.category_id} score={tres.score:.4f}")
+            if tres.category_id is not None:
+                topic_label = CATEGORY_DISPLAY.get(tres.category_id, {}).get(lang, "Unknown")
+            else:
+                topic_label = "Unknown"
+            topic_results_buffer[aid] = {"label": topic_label, "score": float(tres.score)}
+            db.upsert_article_topic(article_id=aid, topic_label=topic_label, topic_score=tres.score)
 
         del topic_gpu
         _gpu_cleanup(logger, cooldown_sec)

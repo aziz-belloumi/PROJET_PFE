@@ -18,6 +18,7 @@ from src.sentiment_analysis import (
     probs_norm_prali22_4class,
     probs_norm_3class_posnegneu,
     probs_norm_camel_3class,
+    probs_norm_3class_financial,
 )
 from src.topic_classification import DEFAULT_TOPIC_PARAMS, CATEGORY_MAP
 from src.preprocessing.router import (
@@ -68,7 +69,9 @@ SENT_MODELS_BY_LANG = {
         (0, Config.ARABERT_SENTIMENT_MODEL, probs_norm_prali22_4class),
         (1, Config.CAMEL_SENTIMENT_MODEL,   probs_norm_camel_3class),
     ],
-    "en": [(2, Config.EN_SENTIMENT_MODEL, probs_norm_3class_posnegneu)],
+    # OLD:
+    # "en": [(2, Config.EN_SENTIMENT_MODEL, probs_norm_3class_posnegneu)],
+    "en": [(2, Config.EN_SENTIMENT_MODEL, probs_norm_3class_financial)],
     "fr": [(3, Config.FR_SENTIMENT_MODEL, probs_norm_3class_posnegneu)],
 }
 
@@ -84,7 +87,7 @@ TOPIC_PARAMS     = dict(DEFAULT_TOPIC_PARAMS)
 def main():
     pipeline_t0 = time.perf_counter()
 
-    sample_size = 1000
+    sample_size = 4000
     raw_table   = getattr(Config, "RAW_TABLE", "article")
 
     # ---- Build run_config (for logging / reproducibility) ----
@@ -162,17 +165,18 @@ def main():
         return
 
     # ================================================================
-    # STAGE 2 — CPU Timing Pass
+    # STAGE 2 — CPU Timing Pass (Temporarily Commented)
     # ================================================================
-    cpu_time_ner_ms, cpu_time_sentiment_ms, cpu_time_topic_ms = run_cpu_pass(
-        work_df=work_df,
-        ner_models_by_lang=NER_MODELS_BY_LANG,
-        sent_models_by_lang=SENT_MODELS_BY_LANG,
-        ner_params=NER_PARAMS,
-        sentiment_params=SENTIMENT_PARAMS,
-        topic_params=TOPIC_PARAMS,
-        logger=logger,
-    )
+    cpu_time_ner_ms, cpu_time_sentiment_ms, cpu_time_topic_ms = {}, {}, {}
+    # cpu_time_ner_ms, cpu_time_sentiment_ms, cpu_time_topic_ms = run_cpu_pass(
+    #     work_df=work_df,
+    #     ner_models_by_lang=NER_MODELS_BY_LANG,
+    #     sent_models_by_lang=SENT_MODELS_BY_LANG,
+    #     ner_params=NER_PARAMS,
+    #     sentiment_params=SENTIMENT_PARAMS,
+    #     topic_params=TOPIC_PARAMS,
+    #     logger=logger,
+    # )
 
     # ================================================================
     # STAGE 3 — GPU Inference + DB Writes

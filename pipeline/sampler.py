@@ -57,6 +57,7 @@ def run_sampling(
         FROM {raw_table} a
         LEFT JOIN articles_enriched ae ON a.id = ae.article_id
         WHERE a.body IS NOT NULL
+          AND CHAR_LENGTH(a.body) >= 150
           AND (ae.article_id IS NULL OR ae.sentiment_label IS NULL)
         GROUP BY a.id
         ORDER BY a.crawl_date DESC, a.id DESC

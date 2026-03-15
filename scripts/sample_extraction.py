@@ -52,7 +52,7 @@ def _pick_language_per_article(sent_long: pd.DataFrame) -> pd.DataFrame:
     )
 
 
-def main(n_ar: int = 200, n_en: int = 100, raw_table: str = "article") -> Path | list[Path]:
+def main(n_ar: int = 200, n_en: int = 200, raw_table: str = "article") -> Path | list[Path]:
     out_dir = Path(__file__).resolve().parent
 
     db = DatabaseConnection()
@@ -66,9 +66,9 @@ def main(n_ar: int = 200, n_en: int = 100, raw_table: str = "article") -> Path |
             SELECT a.id AS article_id
             FROM {raw_table} a
             JOIN articles_enriched ae ON ae.article_id = a.id
-            WHERE a.body IS NOT NULL
               AND ae.language = 'ar'
               AND ae.sentiment_label IS NOT NULL
+              AND CHAR_LENGTH(a.body) >= 150
               AND EXISTS (SELECT 1 FROM article_topics t WHERE t.article_id = a.id)
               AND EXISTS (SELECT 1 FROM article_entities ane WHERE ane.article_id = a.id)
             GROUP BY a.id
@@ -83,6 +83,7 @@ def main(n_ar: int = 200, n_en: int = 100, raw_table: str = "article") -> Path |
             WHERE a.body IS NOT NULL
               AND ae.language = 'en'
               AND ae.sentiment_label IS NOT NULL
+              AND CHAR_LENGTH(a.body) >= 150
               AND EXISTS (SELECT 1 FROM article_topics t WHERE t.article_id = a.id)
               AND EXISTS (SELECT 1 FROM article_entities ane WHERE ane.article_id = a.id)
             GROUP BY a.id
@@ -191,7 +192,6 @@ def main(n_ar: int = 200, n_en: int = 100, raw_table: str = "article") -> Path |
     out = out.sort_values(by="language", ascending=True)
 
     out["topic_verdict"] = ""
-    out["sentiment_verdict"] = ""
     out["true_prediction"] = ""
 
     # ---------------------------------------------------------------------
@@ -200,8 +200,9 @@ def main(n_ar: int = 200, n_en: int = 100, raw_table: str = "article") -> Path |
     topic_cols = ["article_id", "language", "body", "topic_label", "topic_score", "topic_verdict", "true_prediction"]
     topic_cols = [c for c in topic_cols if c in out.columns]
     
-    sent_cols = ["article_id", "language", "body", "sentiment_verdict", "true_prediction"] + [
-        c for c in out.columns if c.startswith("sentiment") and c != "sentiment_verdict"
+    
+    sent_cols = ["article_id", "language", "body", "true_prediction"] + [
+        c for c in out.columns if c.startswith("sentiment")
     ]
     
     out_topic = out_dir / "manual_eval_sample_topic.csv"
@@ -221,7 +222,7 @@ if __name__ == "__main__":
 
     ap = argparse.ArgumentParser()
     ap.add_argument("--n_ar", type=int, default=200, help="Number of Arabic articles to export")
-    ap.add_argument("--n_en", type=int, default=100, help="Number of English articles to export")
+    ap.add_argument("--n_en", type=int, default=200, help="Number of English articles to export")
     ap.add_argument("--raw_table", type=str, default="article", help="Raw article table name")
     args = ap.parse_args()
 

@@ -20,6 +20,60 @@ DEFAULT_TOPIC_PARAMS: Dict[str, Any] = {
 }
 
 CATEGORY_MAP: Dict[int, Dict[str, str]] = {
+    0: {
+        "ar": "السياسة والحكومة والعلاقات الدولية والدبلوماسية",
+        "fr": "la politique, le gouvernement et les relations internationales",
+        "en": "politics, government and international relations",
+    },
+    1: {
+        "ar": "الاقتصاد والتجارة والاستثمار والأسواق المالية",
+        "fr": "l'économie, le commerce, l'investissement et les marchés financiers",
+        "en": "economy, trade, investment and financial markets",
+    },
+    2: {
+        "ar": "الأمن الداخلي والشرطة والجريمة والإرهاب",
+        "fr": "la sécurité intérieure, la police, la criminalité et le terrorisme",
+        "en": "internal security, police, crime and terrorism",
+    },
+    3: {
+        "ar": "الطاقة والنفط والغاز والموارد الطبيعية",
+        "fr": "l'énergie, le pétrole, le gaz et les ressources naturelles",
+        "en": "energy, oil, gas and natural resources",
+    },
+    4: {
+        "ar": "الحروب والنزاعات المسلحة والعمليات العسكرية",
+        "fr": "les guerres, les conflits armés et les opérations militaires",
+        "en": "wars, armed conflicts and military operations",
+    },
+    5: {
+        "ar": "الانتخابات والتصويت والحملات الانتخابية",
+        "fr": "les élections, le vote et les campagnes électorales",
+        "en": "elections, voting and electoral campaigns",
+    },
+    6: {
+        "ar": "القضاء والمحاكم والقضايا القانونية",
+        "fr": "la justice, les tribunaux et les affaires juridiques",
+        "en": "courts, justice system and legal cases",
+    },
+    7: {
+        "ar": "الصحة والطب والأوبئة والرعاية الصحية",
+        "fr": "la santé, la médecine, les épidémies et les soins de santé",
+        "en": "health, medicine, epidemics and healthcare",
+    },
+    8: {
+        "ar": "الطقس والمناخ والكوارث الطبيعية",
+        "fr": "la météo, le climat et les catastrophes naturelles",
+        "en": "weather, climate and natural disasters",
+    },
+    9: {
+        "ar": "الرياضة والبطولات والمسابقات الرياضية",
+        "fr": "le sport, les championnats et les compétitions sportives",
+        "en": "sports, championships and athletic competitions",
+    },
+}
+
+# What gets stored in DB (short label)
+CATEGORY_DISPLAY: Dict[int, Dict[str, str]] = {
     0: {"ar": "السياسة", "fr": "Politique", "en": "Politics"},
     1: {"ar": "الاقتصاد", "fr": "Économie", "en": "Economy"},
     2: {"ar": "الأمن", "fr": "Sécurité", "en": "Security"},
@@ -29,8 +83,7 @@ CATEGORY_MAP: Dict[int, Dict[str, str]] = {
     6: {"ar": "العدالة", "fr": "Justice", "en": "Justice"},
     7: {"ar": "الصحة", "fr": "Santé", "en": "Health"},
     8: {"ar": "الطقس", "fr": "Météo", "en": "Weather"},
-    9: {"ar": "المجتمع", "fr": "Société", "en": "Society"}
-
+    9: {"ar": "الرياضة", "fr": "Sport", "en": "Sports"},
 }
 
 
@@ -56,17 +109,30 @@ def label_to_category_id(label: str) -> Optional[int]:
     return None
 
 
+# OLD templates:
+# def get_hypothesis_template(lang: str) -> str:
+#     """
+#     Language-specific hypothesis templates improve XNLI zero-shot quality.
+#     """
+#     lang = (lang or "").lower().strip()
+#     if lang == "ar":
+#         return "هذا النص عن {}."
+#     if lang == "fr":
+#         return "Ce texte parle de {}."
+#     # default English
+#     return "This text is about {}."
+
 def get_hypothesis_template(lang: str) -> str:
     """
     Language-specific hypothesis templates improve XNLI zero-shot quality.
     """
     lang = (lang or "").lower().strip()
     if lang == "ar":
-        return "هذا النص عن {}."
+        return "هذا النص يتحدث بشكل رئيسي عن موضوع {}."
     if lang == "fr":
-        return "Ce texte parle de {}."
+        return "Le sujet principal de ce texte est {}."
     # default English
-    return "This text is about {}."
+    return "The main subject of this text is {}."
 
 
 @dataclass
