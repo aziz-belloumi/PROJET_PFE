@@ -69,10 +69,29 @@ SENT_MODELS_BY_LANG = {
         (0, Config.ARABERT_SENTIMENT_MODEL, probs_norm_prali22_4class),
         (1, Config.CAMEL_SENTIMENT_MODEL,   probs_norm_camel_3class),
     ],
-    # OLD:
-    # "en": [(2, Config.EN_SENTIMENT_MODEL, probs_norm_3class_posnegneu)],
     "en": [(2, Config.EN_SENTIMENT_MODEL, probs_norm_3class_financial)],
     "fr": [(3, Config.FR_SENTIMENT_MODEL, probs_norm_3class_posnegneu)],
+}
+
+TOPIC_MODELS_BY_LANG = {
+    "ar": [
+        (0, Config.TOPIC_MODEL_1),
+        (1, Config.TOPIC_MODEL_2),
+        (2, Config.TOPIC_MODEL_3),
+        (3, Config.TOPIC_MODEL_4),
+    ],
+    "en": [
+        (0, Config.TOPIC_MODEL_1),
+        (1, Config.TOPIC_MODEL_2),
+        (2, Config.TOPIC_MODEL_3),
+        (3, Config.TOPIC_MODEL_4),
+    ],
+    "fr": [
+        (0, Config.TOPIC_MODEL_1),
+        (1, Config.TOPIC_MODEL_2),
+        (2, Config.TOPIC_MODEL_3),
+        (3, Config.TOPIC_MODEL_4),
+    ],
 }
 
 NER_PARAMS       = dict(DEFAULT_NER_PARAMS)
@@ -87,7 +106,7 @@ TOPIC_PARAMS     = dict(DEFAULT_TOPIC_PARAMS)
 def main():
     pipeline_t0 = time.perf_counter()
 
-    sample_size = 4000
+    sample_size = 2000
     raw_table   = getattr(Config, "RAW_TABLE", "article")
 
     # ---- Build run_config (for logging / reproducibility) ----
@@ -125,13 +144,13 @@ def main():
             "topic":       {"ar": PREPROCESS_SENTIMENT_PARAMS,   "latin": LATIN_TOPIC_PARAMS},
         },
         "topic_classification": {
-            "model":      Config.TOPIC_MODEL,
             "params":     TOPIC_PARAMS,
             "categories": {str(k): v for k, v in CATEGORY_MAP.items()},
         },
         "models": {
             "ner":       NER_MODELS_BY_LANG,
             "sentiment": {k: [(mv, name) for mv, name, _ in v] for k, v in SENT_MODELS_BY_LANG.items()},
+            "topic":     TOPIC_MODELS_BY_LANG,
         },
     }
 
@@ -172,6 +191,7 @@ def main():
     #     work_df=work_df,
     #     ner_models_by_lang=NER_MODELS_BY_LANG,
     #     sent_models_by_lang=SENT_MODELS_BY_LANG,
+    #     topic_models_by_lang=TOPIC_MODELS_BY_LANG,
     #     ner_params=NER_PARAMS,
     #     sentiment_params=SENTIMENT_PARAMS,
     #     topic_params=TOPIC_PARAMS,
@@ -191,6 +211,7 @@ def main():
             db=db,
             ner_models_by_lang=NER_MODELS_BY_LANG,
             sent_models_by_lang=SENT_MODELS_BY_LANG,
+            topic_models_by_lang=TOPIC_MODELS_BY_LANG,
             ner_params=NER_PARAMS,
             sentiment_params=SENTIMENT_PARAMS,
             topic_params=TOPIC_PARAMS,

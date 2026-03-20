@@ -110,7 +110,6 @@ def run_sampling(
             model_version=0,
             language=str(r.lang),
             sentiment_label="SKIPPED",
-            dominant_topic="UNSUPPORTED_LANG",
         )
 
     if work_df.empty:

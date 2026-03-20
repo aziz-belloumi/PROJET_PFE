@@ -19,7 +19,7 @@ def export_lang_samples_csv(
     run_dir: Path,
     work_df: pd.DataFrame,
     sent_results_buffer: Dict[tuple, dict],
-    topic_results_buffer: Dict[int, dict],
+    topic_results_buffer: Dict[tuple, dict],
     logger: logging.Logger,
 ) -> None:
     """
@@ -33,10 +33,15 @@ def export_lang_samples_csv(
         work_df:               Articles DataFrame (must have 'id', 'lang', 'text_raw',
                                'text_sentiment', 'text_ner', 'text_topic' columns).
         sent_results_buffer:   {(article_id, model_version): {"label": ..., "score": ...}}
-        topic_results_buffer:  {article_id: {"label": ..., "score": ...}}
+        topic_results_buffer:  {(article_id, model_version): {"label": ..., "score": ...}}
         logger:                Logger instance.
     """
     rows = []
+
+    # Get a distinct set of model versions from the topic buffer (or default to 0, 1, 2, 3)
+    topic_mvs = {k[1] for k in topic_results_buffer.keys() if isinstance(k, tuple) and len(k) == 2}
+    if not topic_mvs:
+        topic_mvs = {0, 1, 2, 3}
 
     for r in work_df.itertuples(index=False):
         aid  = int(r.id)
@@ -45,11 +50,10 @@ def export_lang_samples_csv(
         if lang not in {"en", "fr"}:
             continue
 
-        mv = 2 if lang == "en" else 3  # model_version mapping
-        sent_info  = sent_results_buffer.get((aid, mv), {})
-        topic_info = topic_results_buffer.get(aid, {})
+        mv_sent = 2 if lang == "en" else 3  # Sentiment model_version mapping
+        sent_info  = sent_results_buffer.get((aid, mv_sent), {})
 
-        rows.append({
+        row = {
             "article_id":           aid,
             "lang":                 lang,
             "text_raw":             r.text_raw,
@@ -58,9 +62,14 @@ def export_lang_samples_csv(
             "topic_preprocessed":   r.text_topic,
             "sentiment_label":      sent_info.get("label"),
             "sentiment_score":      sent_info.get("score"),
-            "dominant_topic":       topic_info.get("label"),
-            "topic_score":          topic_info.get("score"),
-        })
+        }
+        
+        for mv in sorted(topic_mvs):
+            topic_info = topic_results_buffer.get((aid, mv), {})
+            row[f"topic_label_mv{mv}"] = topic_info.get("label")
+            row[f"topic_score_mv{mv}"] = topic_info.get("score")
+
+        rows.append(row)
 
     if not rows:
         logger.info("No EN/FR articles to export — skipping sample CSVs.")

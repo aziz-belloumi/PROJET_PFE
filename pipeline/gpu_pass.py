@@ -8,10 +8,10 @@ articles_enriched). Returns result buffers for the exporter stage.
 
 Returns:
     sent_results_buffer   — {(article_id, model_version): {"label", "score"}}
-    topic_results_buffer  — {article_id: {"label", "score"}}
+    topic_results_buffer  — {(article_id, model_version): {"label", "score"}}
     gpu_time_ner_ms       — {(article_id, model_version): int}
     gpu_time_sentiment_ms — {(article_id, model_version): int}
-    gpu_time_topic_ms     — {article_id: int}
+    gpu_time_topic_ms     — {(article_id, model_version): int}
 """
 
 from __future__ import annotations
@@ -65,6 +65,7 @@ def run_gpu_pass(
     db: DatabaseConnection,
     ner_models_by_lang: Dict[str, List[Tuple[int, str]]],
     sent_models_by_lang: Dict[str, list],
+    topic_models_by_lang: Dict[str, list],
     ner_params: dict,
     sentiment_params: dict,
     topic_params: dict,
@@ -136,70 +137,86 @@ def run_gpu_pass(
                 del ner
                 _gpu_cleanup(logger, cooldown_sec)
 
-    # ----------------------------------------------------------- Sentiment ---
+    # ----------------------------------------------------------- Sentiment --- DISABLED
+    # with torch.inference_mode():
+    #     for lang, models in sent_models_by_lang.items():
+    #         lang_subset = work_df[work_df["lang"] == lang]
+    #         if lang_subset.empty:
+    #             continue
+    #
+    #         for mv, name, norm in models:
+    #             logger.info(f"[GPU][SENT] lang={lang} model_version={mv}: {name}")
+    #             sent = TransformersSentiment(
+    #                 model_name=name, logger=logger, preprocessor=None,
+    #                 device=gpu_device, probs_normalizer=norm, **sentiment_params,
+    #             )
+    #
+    #             for r in lang_subset.itertuples(index=False):
+    #                 aid = int(r.id)
+    #                 t0  = time.perf_counter()
+    #                 res = sent.predict(r.text_sentiment)
+    #                 _cuda_sync(gpu_device)
+    #                 gpu_time_sentiment_ms[(aid, mv)] = gpu_time_sentiment_ms.get((aid, mv), 0) + int((time.perf_counter() - t0) * 1000)
+    #                 sent_results_buffer[(aid, mv)] = {"label": res.label, "score": float(res.score)}
+    #
+    #             del sent
+    #             _gpu_cleanup(logger, cooldown_sec)
+
+    # ------------------------------------------------------------- Topic ----
+    topic_results_buffer: Dict[Tuple[int, int], dict] = {}
+    gpu_time_topic_ms:    Dict[Tuple[int, int], int]  = {}
+
     with torch.inference_mode():
-        for lang, models in sent_models_by_lang.items():
+        for lang, models in topic_models_by_lang.items():
             lang_subset = work_df[work_df["lang"] == lang]
             if lang_subset.empty:
                 continue
 
-            for mv, name, norm in models:
-                logger.info(f"[GPU][SENT] lang={lang} model_version={mv}: {name}")
-                sent = TransformersSentiment(
+            for mv, name in models:
+                logger.info(f"[GPU][TOPIC] lang={lang} model_version={mv}: {name}")
+                topic_gpu = TransformersTopic(
                     model_name=name, logger=logger, preprocessor=None,
-                    device=gpu_device, probs_normalizer=norm, **sentiment_params,
+                    device=gpu_device, **topic_params,
                 )
 
                 for r in lang_subset.itertuples(index=False):
-                    aid = int(r.id)
-                    t0  = time.perf_counter()
-                    res = sent.predict(r.text_sentiment)
+                    aid  = int(r.id)
+
+                    t0   = time.perf_counter()
+                    tres = topic_gpu.predict(r.text_topic, lang=lang)
                     _cuda_sync(gpu_device)
-                    gpu_time_sentiment_ms[(aid, mv)] = gpu_time_sentiment_ms.get((aid, mv), 0) + int((time.perf_counter() - t0) * 1000)
-                    sent_results_buffer[(aid, mv)] = {"label": res.label, "score": float(res.score)}
+                    gpu_time_topic_ms[(aid, mv)] = gpu_time_topic_ms.get((aid, mv), 0) + int((time.perf_counter() - t0) * 1000)
 
-                del sent
+                    if tres.category_id is not None:
+                        topic_label = CATEGORY_DISPLAY.get(tres.category_id, {}).get(lang, "Unknown")
+                    else:
+                        topic_label = "Unknown"
+                        
+                    topic_results_buffer[(aid, mv)] = {"label": topic_label, "score": float(tres.score)}
+                    db.upsert_article_topic(article_id=aid, model_version=mv, topic_label=topic_label, topic_score=tres.score)
+
+                del topic_gpu
                 _gpu_cleanup(logger, cooldown_sec)
-
-    # ------------------------------------------------------------- Topic ----
-    topic_results_buffer: Dict[int, dict] = {}
-    gpu_time_topic_ms:    Dict[int, int]  = {}
-
-    with torch.inference_mode():
-        logger.info(f"[GPU][TOPIC] loading: {Config.TOPIC_MODEL}")
-        topic_gpu = TransformersTopic(
-            model_name=Config.TOPIC_MODEL, logger=logger, preprocessor=None,
-            device=gpu_device, **topic_params,
-        )
-
-        for r in work_df.itertuples(index=False):
-            aid  = int(r.id)
-            lang = str(r.lang)
-
-            t0   = time.perf_counter()
-            tres = topic_gpu.predict(r.text_topic, lang=lang)
-            _cuda_sync(gpu_device)
-            gpu_time_topic_ms[aid] = int((time.perf_counter() - t0) * 1000)
-
-            # logger.info(f"[GPU][TOPIC] aid={aid} pred_label={tres.label} pred_id={tres.category_id} score={tres.score:.4f}")
-            if tres.category_id is not None:
-                topic_label = CATEGORY_DISPLAY.get(tres.category_id, {}).get(lang, "Unknown")
-            else:
-                topic_label = "Unknown"
-            topic_results_buffer[aid] = {"label": topic_label, "score": float(tres.score)}
-            db.upsert_article_topic(article_id=aid, topic_label=topic_label, topic_score=tres.score)
-
-        del topic_gpu
-        _gpu_cleanup(logger, cooldown_sec)
 
     # ------------------------------------------------ Persist enriched rows -
     logger.info("Persisting articles_enriched rows...")
+    
+    # Extract unique model versions across all passes
+    all_mvs = set()
+    for buffer in (sent_results_buffer, topic_results_buffer, gpu_time_ner_ms):
+        for k in buffer.keys():
+            if isinstance(k, tuple) and len(k) == 2:
+                all_mvs.add(k[1])
+    
+    # If no inferences happened, provide empty range to avoid skipping loop,
+    # but practically all_mvs should populate during inference
+    model_versions = all_mvs if all_mvs else {0, 1, 2, 3}
+    
     for r in work_df.itertuples(index=False):
-        aid       = int(r.id)
-        lang      = str(r.lang)
-        dom_topic = topic_results_buffer.get(aid, {}).get("label")
+        aid  = int(r.id)
+        lang = str(r.lang)
 
-        for mv, _ in ner_models_by_lang.get(lang, []):
+        for mv in model_versions:
             sent_info = sent_results_buffer.get((aid, mv), {})
             db.upsert_articles_enriched(
                 article_id=aid,
@@ -207,13 +224,12 @@ def run_gpu_pass(
                 language=lang,
                 sentiment_label=sent_info.get("label"),
                 sentiment_score=sent_info.get("score"),
-                dominant_topic=dom_topic,
                 cpu_time_ner=cpu_time_ner_ms.get((aid, mv)),
                 cpu_time_sentiment=cpu_time_sentiment_ms.get((aid, mv)),
-                cpu_time_topic=cpu_time_topic_ms.get(aid),
+                cpu_time_topic=cpu_time_topic_ms.get((aid, mv)),
                 gpu_time_ner=gpu_time_ner_ms.get((aid, mv)),
                 gpu_time_sentiment=gpu_time_sentiment_ms.get((aid, mv)),
-                gpu_time_topic=gpu_time_topic_ms.get(aid),
+                gpu_time_topic=gpu_time_topic_ms.get((aid, mv)),
             )
 
     return (

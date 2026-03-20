@@ -79,8 +79,6 @@ class DatabaseConnection:
                     sentiment_label VARCHAR(10),
                     sentiment_score FLOAT,
 
-                    dominant_topic VARCHAR(100),
-
                     cpu_time_ner BIGINT,
                     cpu_time_sentiment BIGINT,
                     cpu_time_topic BIGINT,
@@ -133,12 +131,14 @@ class DatabaseConnection:
                 conn.execute(text("""
                 CREATE TABLE IF NOT EXISTS article_topics (
                     article_id BIGINT NOT NULL,
+                    model_version TINYINT NOT NULL,  -- 0=joeddav, 1=mDeBERTa-base, 2=mDeBERTa-multi, 3=DeBERTa-large
                     topic_label VARCHAR(100) NOT NULL,
                     topic_score FLOAT,
 
-                    PRIMARY KEY (article_id),
+                    PRIMARY KEY (article_id, model_version),
                     INDEX idx_article (article_id),
-                    INDEX idx_topic (topic_label)
+                    INDEX idx_topic (topic_label),
+                    INDEX idx_model (model_version)
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
                 """))
 
@@ -164,7 +164,6 @@ class DatabaseConnection:
         language: str | None = None,
         sentiment_label: str | None = None,
         sentiment_score: float | None = None,
-        dominant_topic: str | None = None,
         cpu_time_ner: int | None = None,
         cpu_time_sentiment: int | None = None,
         cpu_time_topic: int | None = None,
@@ -176,13 +175,11 @@ class DatabaseConnection:
         INSERT INTO articles_enriched (
             article_id, model_version, language,
             sentiment_label, sentiment_score,
-            dominant_topic, 
             cpu_time_ner, cpu_time_sentiment, cpu_time_topic,
             gpu_time_ner, gpu_time_sentiment, gpu_time_topic
         ) VALUES (
             :aid, :mv, :lang,
             :s_lbl, :s_sc,
-            :topic, 
             :ct_ner, :ct_sent, :ct_top,
             :gt_ner, :gt_sent, :gt_top
         )
@@ -190,7 +187,6 @@ class DatabaseConnection:
             language = COALESCE(VALUES(language), language),
             sentiment_label = COALESCE(VALUES(sentiment_label), sentiment_label),
             sentiment_score = COALESCE(VALUES(sentiment_score), sentiment_score),
-            dominant_topic = COALESCE(VALUES(dominant_topic), dominant_topic),
             cpu_time_ner = COALESCE(VALUES(cpu_time_ner), cpu_time_ner),
             cpu_time_sentiment = COALESCE(VALUES(cpu_time_sentiment), cpu_time_sentiment),
             cpu_time_topic = COALESCE(VALUES(cpu_time_topic), cpu_time_topic),
@@ -204,7 +200,6 @@ class DatabaseConnection:
             "lang": language,
             "s_lbl": sentiment_label,
             "s_sc": sentiment_score,
-            "topic": dominant_topic,
             "ct_ner": cpu_time_ner,
             "ct_sent": cpu_time_sentiment,
             "ct_top": cpu_time_topic,
@@ -308,18 +303,20 @@ class DatabaseConnection:
     def upsert_article_topic(
         self,
         article_id: int,
+        model_version: int,
         topic_label: str,
         topic_score: float | None = None,
     ):
         sql = """
-        INSERT INTO article_topics (article_id, topic_label, topic_score)
-        VALUES (:aid, :lab, :sc)
+        INSERT INTO article_topics (article_id, model_version, topic_label, topic_score)
+        VALUES (:aid, :mv, :lab, :sc)
         ON DUPLICATE KEY UPDATE
             topic_label = VALUES(topic_label),
             topic_score = VALUES(topic_score)
         """
         self.execute_query(sql, {
             "aid": int(article_id),
+            "mv": int(model_version),
             "lab": str(topic_label),
             "sc": float(topic_score) if topic_score is not None else None,
         })

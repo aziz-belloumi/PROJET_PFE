@@ -24,17 +24,36 @@ CHUNK_SIZE = 4000       # characters per chunk
 CHUNK_OVERLAP = 400     # overlap to avoid boundary loss
 MAX_RETRIES = 3
 
-# Topics allowed
-TOPICS = [
-    "Politics", "Economy", "Security", "Energy", "Conflict",
-    "Elections", "Justice", "Health", "Weather", "Sports"
-]
-TOPIC_LIST_TEXT = "\n".join(TOPICS)
+# Model version identifiers (mv0..mv3) — no alias names
+MODEL_VERSIONS = [0, 1, 2, 3]
+
+# Multilingual topic label mapping — matches the database CATEGORY_DISPLAY exactly
+CATEGORY_DISPLAY = {
+    0: {"ar": "السياسة",    "fr": "Politique",  "en": "Politics"},
+    1: {"ar": "الاقتصاد",  "fr": "Économie",   "en": "Economy"},
+    2: {"ar": "الأمن",      "fr": "Sécurité",   "en": "Security"},
+    3: {"ar": "الطاقة",    "fr": "Énergie",    "en": "Energy"},
+    4: {"ar": "النزاع",    "fr": "Conflit",    "en": "Conflict"},
+    5: {"ar": "الانتخابات","fr": "Élections",  "en": "Elections"},
+    6: {"ar": "العدالة",   "fr": "Justice",    "en": "Justice"},
+    7: {"ar": "الصحة",     "fr": "Santé",      "en": "Health"},
+    8: {"ar": "الطقس",     "fr": "Météo",      "en": "Weather"},
+    9: {"ar": "الرياضة",    "fr": "Sport",    "en": "Sports"},
+    10: {"ar": "الثقافة",    "fr": "Culture",  "en": "Culture"},
+}
+
+# Flat set of every valid label across all languages (for validation)
+TOPIC_ALLOWED_LABELS = {v for row in CATEGORY_DISPLAY.values() for v in row.values()}
 
 # Sentiments allowed
-SENTIMENTS = ["POSITIVE","NEGATIVE","NEUTRAL"]
+SENTIMENTS = ["POSITIVE", "NEGATIVE", "NEUTRAL"]
 SENTIMENT_LIST_TEXT = "\n".join(SENTIMENTS)
 
+# Sentiment normalization map
+SENTIMENT_NORM = {
+    "POS": "POSITIVE", "NEG": "NEGATIVE", "NEU": "NEUTRAL",
+    "POSITIVE": "POSITIVE", "NEGATIVE": "NEGATIVE", "NEUTRAL": "NEUTRAL",
+}
 
 # -------------------------------
 # Article Chunking
@@ -57,32 +76,34 @@ def chunk_article(text, size=CHUNK_SIZE, overlap=CHUNK_OVERLAP):
 # Prompt Builders
 # -------------------------------
 
-def build_topic_prompt(language, article, predicted_topic):
-    return f"""
-You are evaluating topic classification for news articles.
+def build_topic_prompt(language, article):
+    # Build the multilingual label table for the prompt
+    table_lines = ["Arabic | French | English"]
+    for row in CATEGORY_DISPLAY.values():
+        table_lines.append(f"{row['ar']} | {row['fr']} | {row['en']}")
+    label_table = "\n".join(table_lines)
+
+    return f"""You are evaluating topic classification for news articles.
 
 The article may be written in Arabic, English, or French.
-
 Article language: {language}
 
 Article:
 {article}
 
-Predicted topic:
-{predicted_topic}
+You MUST choose the topic from the following table and return it EXACTLY as written.
+Do not translate, paraphrase, or invent new labels.
 
-Possible topics:
-{TOPIC_LIST_TEXT}
+{label_table}
 
-Tasks:
-1. Determine the TRUE topic of the article from the list above.
-2. Check if the predicted topic matches the true topic.
+Rules:
+- If the article is in Arabic, return the Arabic label.
+- If the article is in English, return the English label.
+- If the article is in French, return the French label.
+- Respond ONLY with the two lines below. No explanations. No additional text.
 
-Output STRICTLY in this format:
-
-topic_verdict: TRUE or FALSE
-true_prediction: one of the topic names
-"""
+true_prediction: <exact label from the table above>
+true_language: <Arabic | English | French>"""
 
 def build_sentiment_prompt(language, article, predicted_sentiment):
     return f"""
@@ -104,6 +125,7 @@ Tasks:
 Output STRICTLY in this format:
 
 true_prediction: one of the sentiment names
+true_language: one of [Arabic, English, French]
 """
 
 
@@ -148,35 +170,28 @@ def call_llm(prompt):
 # Parse LLM Output
 # -------------------------------
 
-def parse_topic_output(text):
+def parse_llm_response(response_text):
+    """
+    Parses the LLM output to extract 'true_prediction' and 'true_language'.
+    """
+    prediction = ""
+    language = ""
+    
+    # Extract prediction
+    match_p = re.search(r"true_prediction:\s*(.*)", response_text, re.IGNORECASE)
+    if match_p:
+        prediction = match_p.group(1).strip()
+    
+    # Extract language
+    match_l = re.search(r"true_language:\s*(.*)", response_text, re.IGNORECASE)
+    if match_l:
+        language = match_l.group(1).strip().lower()
+        # Map back to codes
+        if "arabic" in language: language = "ar"
+        elif "english" in language: language = "en"
+        elif "french" in language: language = "fr"
 
-    verdict_match = re.search(r"topic_verdict:\s*(TRUE|FALSE)", text, re.IGNORECASE)
-
-    topics_regex = "|".join(TOPICS)
-
-    topic_match = re.search(
-        rf"true_prediction:\s*({topics_regex})",
-        text,
-        re.IGNORECASE,
-    )
-
-    verdict = verdict_match.group(1).upper() if verdict_match else None
-    topic = topic_match.group(1).title() if topic_match else None
-
-    return verdict, topic
-
-
-def parse_sentiment_output(text):
-
-    sentiment_match = re.search(
-        r"true_prediction:\s*(POSITIVE|NEGATIVE|NEUTRAL)",
-        text,
-        re.IGNORECASE,
-    )
-
-    sentiment = sentiment_match.group(1).upper() if sentiment_match else None
-
-    return sentiment
+    return prediction, language
 
 
 # -------------------------------
@@ -191,54 +206,49 @@ def evaluate_topics():
 
     df = pd.read_csv(TOPIC_CSV).fillna("")
 
-    if "topic_verdict" not in df.columns:
-        df["topic_verdict"] = ""
-
     if "true_prediction" not in df.columns:
         df["true_prediction"] = ""
+    if "true_language" not in df.columns:
+        df["true_language"] = ""
+
+    # Ensure verdict columns exist (may be absent in old CSVs)
+    for mv in MODEL_VERSIONS:
+        if f"topic_verdict_mv{mv}" not in df.columns:
+            df[f"topic_verdict_mv{mv}"] = ""
+
+    topic_label_cols = sorted([c for c in df.columns if c.startswith("topic_label_")])
 
     print(f"Total topic articles: {len(df)}")
 
+    # ---------------------------------------------------------------
+    # LLM pass: the model ONLY determines true_prediction + true_language
+    # ---------------------------------------------------------------
     for idx, row in tqdm(df.iterrows(), total=len(df)):
+        if str(row["true_prediction"]).strip():
+            continue  # already evaluated — skip
 
-        if str(row["topic_verdict"]).strip() and str(row["true_prediction"]).strip():
-            continue
+        prompt = build_topic_prompt(row["language"], row["body"])
+        resp = call_llm(prompt)
+        pred, lang_true = parse_llm_response(resp)
+        df.at[idx, "true_prediction"] = pred
+        df.at[idx, "true_language"] = lang_true
 
-        article = str(row["body"])
-        language = str(row["language"])
-        predicted_topic = str(row["topic_label"])
+    # ---------------------------------------------------------------
+    # Python verdict computation — no LLM involvement
+    # ---------------------------------------------------------------
+    print("Computing topic verdicts (Python)...")
+    for col in topic_label_cols:
+        mv_id = col.replace("topic_label_", "")          # e.g. "mv0"
+        verdict_col = f"topic_verdict_{mv_id}"            # e.g. "topic_verdict_mv0"
 
-        chunks = chunk_article(article)
+        df[verdict_col] = df.apply(
+            lambda row, c=col: (
+                str(row[c]).strip() == str(row["true_prediction"]).strip()
+            ) if str(row["true_prediction"]).strip() else "",
+            axis=1
+        )
 
-        chunk_topics = []
-        chunk_verdicts = []
-
-        for chunk in chunks:
-
-            prompt = build_topic_prompt(language, chunk, predicted_topic)
-
-            try:
-
-                llm_response = call_llm(prompt)
-                verdict, topic = parse_topic_output(llm_response)
-
-                if topic:
-                    chunk_topics.append(topic)
-
-                if verdict:
-                    chunk_verdicts.append(verdict)
-
-            except Exception as e:
-                print(f"Chunk error row {idx}: {e}")
-
-        final_topic = Counter(chunk_topics).most_common(1)[0][0] if chunk_topics else None
-        final_verdict = Counter(chunk_verdicts).most_common(1)[0][0] if chunk_verdicts else None
-
-        df.at[idx,"topic_verdict"] = final_verdict
-        df.at[idx,"true_prediction"] = final_topic
-
-    df.to_csv(TOPIC_CSV,index=False)
-
+    df.to_csv(TOPIC_CSV, index=False, encoding="utf-8-sig")
     print("Topic evaluation finished.")
 
 
@@ -256,49 +266,49 @@ def evaluate_sentiment():
 
     if "true_prediction" not in df.columns:
         df["true_prediction"] = ""
+    if "true_language" not in df.columns:
+        df["true_language"] = ""
 
-    sentiment_cols = [c for c in df.columns if c.startswith("sentiment_label")]
-    primary_sentiment_col = sentiment_cols[0] if sentiment_cols else None
+    # Ensure verdict columns exist (may be absent in old CSVs)
+    for mv in MODEL_VERSIONS:
+        if f"sentiment_verdict_mv{mv}" not in df.columns:
+            df[f"sentiment_verdict_mv{mv}"] = ""
+
+    sentiment_label_cols = sorted([c for c in df.columns if c.startswith("sentiment_label_")])
+    primary_sentiment_col = sentiment_label_cols[0] if sentiment_label_cols else None
 
     print(f"Total sentiment articles: {len(df)}")
 
-    for idx,row in tqdm(df.iterrows(),total=len(df)):
-
+    # ---------------------------------------------------------------
+    # LLM pass: the model ONLY determines true_prediction + true_language
+    # ---------------------------------------------------------------
+    for idx, row in tqdm(df.iterrows(), total=len(df)):
         if str(row["true_prediction"]).strip():
-            continue
+            continue  # already evaluated — skip
 
-        article = str(row["body"])
-        language = str(row["language"])
+        prompt = build_sentiment_prompt(row["language"], row["body"], row.get(primary_sentiment_col, ""))
+        resp = call_llm(prompt)
+        pred, lang_true = parse_llm_response(resp)
+        df.at[idx, "true_prediction"] = pred
+        df.at[idx, "true_language"] = lang_true
 
-        predicted_sentiment = ""
-        if primary_sentiment_col:
-            predicted_sentiment = str(row[primary_sentiment_col])
+    # ---------------------------------------------------------------
+    # Python verdict computation — no LLM involvement
+    # ---------------------------------------------------------------
+    print("Computing sentiment verdicts (Python)...")
+    for col in sentiment_label_cols:
+        mv_id = col.replace("sentiment_label_", "")          # e.g. "mv0"
+        verdict_col = f"sentiment_verdict_{mv_id}"            # e.g. "sentiment_verdict_mv0"
 
-        chunks = chunk_article(article)
+        df[verdict_col] = df.apply(
+            lambda row, c=col: (
+                SENTIMENT_NORM.get(str(row[c]).strip().upper(), str(row[c]).strip().upper()) ==
+                SENTIMENT_NORM.get(str(row["true_prediction"]).strip().upper(), str(row["true_prediction"]).strip().upper())
+            ) if str(row["true_prediction"]).strip() else "",
+            axis=1
+        )
 
-        sentiments = []
-
-        for chunk in chunks:
-
-            prompt = build_sentiment_prompt(language,chunk,predicted_sentiment)
-
-            try:
-
-                llm_response = call_llm(prompt)
-                sentiment = parse_sentiment_output(llm_response)
-
-                if sentiment:
-                    sentiments.append(sentiment)
-
-            except Exception as e:
-                print(f"Chunk error row {idx}: {e}")
-
-        final_sentiment = Counter(sentiments).most_common(1)[0][0] if sentiments else None
-
-        df.at[idx,"true_prediction"] = final_sentiment
-
-    df.to_csv(SENTIMENT_CSV,index=False)
-
+    df.to_csv(SENTIMENT_CSV, index=False, encoding="utf-8-sig")
     print("Sentiment evaluation finished.")
 
 
@@ -306,16 +316,20 @@ def evaluate_sentiment():
 # Statistics Generator
 # -------------------------------
 
-def _accuracy_block(df: pd.DataFrame, verdict_col: str, label_col: str, task: str) -> list:
+def _accuracy_block(df: pd.DataFrame, true_col: str, pred_col: str, task: str) -> list:
     """Compute overall + per-language + per-label accuracy rows."""
     rows = []
-    evaluated = df[df[verdict_col].astype(str).str.upper().isin(["TRUE", "FALSE"])].copy()
+    evaluated = df[df[true_col].astype(str).str.strip() != ""].copy()
     total = len(evaluated)
     if total == 0:
         rows.append({"Task": task, "Category": "Overall", "Metric": "Total Evaluated", "Value": 0, "Note": "No evaluated rows found"})
-        return rows
+        return rows, 0
 
-    correct = (evaluated[verdict_col].astype(str).str.upper() == "TRUE").sum()
+    y_pred = evaluated[pred_col].astype(str).str.upper()
+    y_true = evaluated[true_col].astype(str).str.upper()
+    is_correct = y_pred == y_true
+
+    correct = is_correct.sum()
     accuracy = correct / total * 100
 
     rows.append({"Task": task, "Category": "Overall", "Metric": "Total Evaluated", "Value": total, "Note": ""})
@@ -325,25 +339,28 @@ def _accuracy_block(df: pd.DataFrame, verdict_col: str, label_col: str, task: st
     # Per language
     if "language" in evaluated.columns:
         for lang in sorted(evaluated["language"].dropna().unique()):
-            sub = evaluated[evaluated["language"] == lang]
+            sub_mask = evaluated["language"] == lang
+            sub = evaluated[sub_mask]
             if len(sub) == 0: continue
-            lang_acc = (sub[verdict_col].astype(str).str.upper() == "TRUE").sum() / len(sub) * 100
+            lang_acc = is_correct.loc[sub.index].sum() / len(sub) * 100
             rows.append({"Task": task, "Category": f"Language: {lang}", "Metric": "Accuracy (%)", "Value": f"{lang_acc:.1f}", "Note": f"{len(sub)} articles"})
 
     # Per predicted label overall
-    if label_col and label_col in evaluated.columns:
-        for label in sorted(evaluated[label_col].dropna().unique()):
-            sub = evaluated[evaluated[label_col] == label]
+    if pred_col and pred_col in evaluated.columns:
+        for label in sorted(evaluated[pred_col].dropna().unique()):
+            sub_mask = evaluated[pred_col] == label
+            sub = evaluated[sub_mask]
             if len(sub) == 0: continue
-            lbl_acc = (sub[verdict_col].astype(str).str.upper() == "TRUE").sum() / len(sub) * 100
+            lbl_acc = is_correct.loc[sub.index].sum() / len(sub) * 100
             rows.append({"Task": task, "Category": f"Label: {label} (Overall)", "Metric": "Accuracy (%)", "Value": f"{lbl_acc:.1f}", "Note": f"{len(sub)} articles"})
 
             # Per label AND language
             if "language" in sub.columns:
                 for lang in sorted(sub["language"].dropna().unique()):
-                    sub_lang = sub[sub["language"] == lang]
+                    sub_lang_mask = (evaluated[pred_col] == label) & (evaluated["language"] == lang)
+                    sub_lang = evaluated[sub_lang_mask]
                     if len(sub_lang) == 0: continue
-                    lbl_lang_acc = (sub_lang[verdict_col].astype(str).str.upper() == "TRUE").sum() / len(sub_lang) * 100
+                    lbl_lang_acc = is_correct.loc[sub_lang.index].sum() / len(sub_lang) * 100
                     rows.append({"Task": task, "Category": f"Label: {label} | Lang: {lang}", "Metric": "Accuracy (%)", "Value": f"{lbl_lang_acc:.1f}", "Note": f"{len(sub_lang)} articles"})
 
     return rows, accuracy
@@ -358,71 +375,121 @@ def generate_statistics():
     # ---- Topic ----
     if TOPIC_CSV.exists():
         df_t = pd.read_csv(TOPIC_CSV).fillna("")
-        if "topic_verdict" in df_t.columns:
-            result = _accuracy_block(df_t, "topic_verdict", "topic_label", "Topic")
-            if isinstance(result, tuple):
-                block_rows, topic_acc = result
-            else:
-                block_rows = result
-            rows.extend(block_rows)
-        else:
-            rows.append({"Task": "Topic", "Category": "Overall", "Metric": "Status", "Value": "Not evaluated yet", "Note": ""})
-    else:
-        rows.append({"Task": "Topic", "Category": "Overall", "Metric": "Status", "Value": "CSV not found", "Note": ""})
 
-    rows.append({"Task": "", "Category": "", "Metric": "", "Value": "", "Note": ""})  # blank separator
+        topic_verdict_cols = sorted([c for c in df_t.columns if c.startswith("topic_verdict_mv")])
+        topic_label_cols   = sorted([c for c in df_t.columns if c.startswith("topic_label_")])
+        primary_topic_col  = topic_label_cols[0] if topic_label_cols else None
+
+        evaluated_t = df_t[df_t["true_prediction"].astype(str).str.strip() != ""].copy()
+
+        if not evaluated_t.empty and topic_verdict_cols:
+            rows.append({"Task": "Topic", "Category": "Per Model Accuracy", "Metric": "---", "Value": "---", "Note": ""})
+            rows.append({"Task": "Topic", "Category": "Overall", "Metric": "Total Evaluated", "Value": len(evaluated_t), "Note": ""})
+
+            for vcol in topic_verdict_cols:
+                mv_id = vcol.replace("topic_verdict_", "")   # e.g. "mv0"
+                # Verdict column contains True/False (or empty for unevaluated)
+                mask = evaluated_t[vcol].astype(str).str.strip().isin(["True", "False"])
+                sub = evaluated_t[mask]
+                if sub.empty:
+                    continue
+                correct = (sub[vcol].astype(str) == "True").sum()
+                acc = correct / len(sub) * 100
+                rows.append({
+                    "Task": "Topic",
+                    "Category": f"Model: {mv_id}",
+                    "Metric": "Accuracy (%)",
+                    "Value": f"{acc:.1f}",
+                    "Note": f"Based on {len(sub)} articles"
+                })
+                if vcol == topic_verdict_cols[0]:
+                    topic_acc = acc
+
+            # Language detection accuracy
+            if "true_language" in evaluated_t.columns and evaluated_t["true_language"].astype(str).str.strip().any():
+                lang_correct = (
+                    evaluated_t["language"].astype(str).str.lower() ==
+                    evaluated_t["true_language"].astype(str).str.lower()
+                ).sum()
+                lang_acc = lang_correct / len(evaluated_t) * 100
+                rows.append({
+                    "Task": "Language",
+                    "Category": "DB Language Detection",
+                    "Metric": "Accuracy (%)",
+                    "Value": f"{lang_acc:.1f}",
+                    "Note": "Evaluating the language routing model"
+                })
+
+            # Per-language and per-label breakdown using primary model verdict
+            if primary_topic_col and topic_verdict_cols:
+                primary_vcol = topic_verdict_cols[0]
+                sub_ev = evaluated_t[
+                    evaluated_t[primary_vcol].astype(str).str.strip().isin(["True", "False"])
+                ].copy()
+                sub_ev["_correct"] = sub_ev[primary_vcol].astype(str) == "True"
+
+                if "language" in sub_ev.columns:
+                    for lang in sorted(sub_ev["language"].dropna().unique()):
+                        lang_sub = sub_ev[sub_ev["language"] == lang]
+                        if lang_sub.empty: continue
+                        la = lang_sub["_correct"].sum() / len(lang_sub) * 100
+                        rows.append({"Task": "Topic", "Category": f"Language: {lang}",
+                                     "Metric": "Accuracy (%)", "Value": f"{la:.1f}",
+                                     "Note": f"{len(lang_sub)} articles"})
+
+                for label in sorted(sub_ev["true_prediction"].dropna().unique()):
+                    lbl_sub = sub_ev[sub_ev["true_prediction"] == label]
+                    if lbl_sub.empty: continue
+                    la = lbl_sub["_correct"].sum() / len(lbl_sub) * 100
+                    rows.append({"Task": "Topic", "Category": f"Label: {label} (Overall)",
+                                 "Metric": "Accuracy (%)", "Value": f"{la:.1f}",
+                                 "Note": f"{len(lbl_sub)} articles"})
+        else:
+            rows.append({"Task": "Topic", "Category": "Overall", "Metric": "Status",
+                         "Value": "Not evaluated yet", "Note": ""})
+    else:
+        rows.append({"Task": "Topic", "Category": "Overall", "Metric": "Status",
+                     "Value": "CSV not found", "Note": ""})
+
+    rows.append({"Task": "", "Category": "", "Metric": "", "Value": "", "Note": ""})  # separator
 
     # ---- Sentiment ----
     if SENTIMENT_CSV.exists():
         df_s = pd.read_csv(SENTIMENT_CSV).fillna("")
-        # Find all sentiment label columns
-        sent_label_cols = sorted([c for c in df_s.columns if c.startswith("sentiment_label")])
-        primary_label_col = sent_label_cols[0] if sent_label_cols else None
-        
-        if "true_prediction" in df_s.columns:
-            
-            # Per-Model Accuracy
-            rows.append({"Task": "Sentiment", "Category": "Per Model Accuracy", "Metric": "---", "Value": "---", "Note": ""})
-            
-            evaluated = df_s[df_s["true_prediction"].astype(str).str.strip() != ""].copy()
-            
-            if not evaluated.empty:
-                # Mapping for label normalization
-                label_map = {
-                    "POS": "POSITIVE", "NEG": "NEGATIVE", "NEU": "NEUTRAL",
-                    "POSITIVE": "POSITIVE", "NEGATIVE": "NEGATIVE", "NEUTRAL": "NEUTRAL"
-                }
-                
-                rows.append({"Task": "Sentiment", "Category": "Overall", "Metric": "Total Evaluated", "Value": len(evaluated), "Note": ""})
-                
-                for col in sent_label_cols:
-                    model_id = col.replace("sentiment_label_", "")
-                    
-                    # Normalize both sides for comparison
-                    y_pred = evaluated[col].astype(str).str.upper().map(lambda x: label_map.get(x, x))
-                    y_true = evaluated["true_prediction"].astype(str).str.upper().map(lambda x: label_map.get(x, x))
-                    
-                    correct = (y_pred == y_true).sum()
-                    acc = correct / len(evaluated) * 100
-                    rows.append({
-                        "Task": "Sentiment",
-                        "Category": f"Model: {model_id}",
-                        "Metric": "Accuracy (%)",
-                        "Value": f"{acc:.1f}",
-                        "Note": f"Based on {len(evaluated)} articles"
-                    })
-                    
-                    # Store primary model accuracy for overall recommendation comparison
-                    if col == primary_label_col:
-                        sentiment_acc = acc
-            else:
-                rows.append({"Task": "Sentiment", "Category": "Overall", "Metric": "Status", "Value": "Not evaluated yet", "Note": ""})
-        else:
-            rows.append({"Task": "Sentiment", "Category": "Overall", "Metric": "Status", "Value": "Not evaluated yet", "Note": ""})
-    else:
-        rows.append({"Task": "Sentiment", "Category": "Overall", "Metric": "Status", "Value": "CSV not found", "Note": ""})
 
-    rows.append({"Task": "", "Category": "", "Metric": "", "Value": "", "Note": ""})  # blank separator
+        sent_verdict_cols = sorted([c for c in df_s.columns if c.startswith("sentiment_verdict_mv")])
+
+        evaluated_s = df_s[df_s["true_prediction"].astype(str).str.strip() != ""].copy()
+
+        if not evaluated_s.empty and sent_verdict_cols:
+            rows.append({"Task": "Sentiment", "Category": "Per Model Accuracy", "Metric": "---", "Value": "---", "Note": ""})
+            rows.append({"Task": "Sentiment", "Category": "Overall", "Metric": "Total Evaluated", "Value": len(evaluated_s), "Note": ""})
+
+            for vcol in sent_verdict_cols:
+                mv_id = vcol.replace("sentiment_verdict_", "")   # e.g. "mv0"
+                mask = evaluated_s[vcol].astype(str).str.strip().isin(["True", "False"])
+                sub = evaluated_s[mask]
+                if sub.empty:
+                    continue
+                correct = (sub[vcol].astype(str) == "True").sum()
+                acc = correct / len(sub) * 100
+                rows.append({
+                    "Task": "Sentiment",
+                    "Category": f"Model: {mv_id}",
+                    "Metric": "Accuracy (%)",
+                    "Value": f"{acc:.1f}",
+                    "Note": f"Based on {len(sub)} articles"
+                })
+                if vcol == sent_verdict_cols[0]:
+                    sentiment_acc = acc
+        else:
+            rows.append({"Task": "Sentiment", "Category": "Overall", "Metric": "Status",
+                         "Value": "Not evaluated yet", "Note": ""})
+    else:
+        rows.append({"Task": "Sentiment", "Category": "Overall", "Metric": "Status",
+                     "Value": "CSV not found", "Note": ""})
+
+    rows.append({"Task": "", "Category": "", "Metric": "", "Value": "", "Note": ""})  # separator
 
     # ---- Recommendation ----
     if topic_acc is not None and sentiment_acc is not None:
@@ -455,18 +522,23 @@ def generate_statistics():
                     pass
 
         if weak_topic:
-            rows.append({"Task": "Recommendation", "Category": "Weak Topic Labels (<60%)", "Metric": "Labels", "Value": ", ".join(weak_topic), "Note": "Consider improving training data for these topics"})
+            rows.append({"Task": "Recommendation", "Category": "Weak Topic Labels (<60%)", "Metric": "Labels",
+                         "Value": ", ".join(weak_topic), "Note": "Consider improving training data for these topics"})
         if weak_sent:
-            rows.append({"Task": "Recommendation", "Category": "Weak Sentiment Models (<60%)", "Metric": "Models", "Value": ", ".join(weak_sent), "Note": "Consider improving these models"})
+            rows.append({"Task": "Recommendation", "Category": "Weak Sentiment Models (<60%)", "Metric": "Models",
+                         "Value": ", ".join(weak_sent), "Note": "Consider improving these models"})
     elif topic_acc is not None:
         rows.append({"Task": "Recommendation", "Category": "Info", "Metric": "Note", "Value": "Only topic data available", "Note": ""})
     elif sentiment_acc is not None:
         rows.append({"Task": "Recommendation", "Category": "Info", "Metric": "Note", "Value": "Only sentiment data available", "Note": ""})
     else:
-        rows.append({"Task": "Recommendation", "Category": "Info", "Metric": "Note", "Value": "No evaluated data found — run evaluations first", "Note": ""})
+        rows.append({"Task": "Recommendation", "Category": "Info", "Metric": "Note",
+                     "Value": "No evaluated data found — run evaluations first", "Note": ""})
 
     out_path = SCRIPT_DIR / "evaluation.csv"
-    pd.DataFrame(rows, columns=["Task", "Category", "Metric", "Value", "Note"]).to_csv(out_path, index=False, encoding="utf-8-sig")
+    pd.DataFrame(rows, columns=["Task", "Category", "Metric", "Value", "Note"]).to_csv(
+        out_path, index=False, encoding="utf-8-sig"
+    )
     print(f"Statistics saved to: {out_path}")
 
 
@@ -479,6 +551,7 @@ def run_evaluation():
     print("--- Starting Topic Evaluation ---")
     evaluate_topics()
 
+    # --- Sentiment evaluation DISABLED ---
     # print("\n--- Starting Sentiment Evaluation ---")
     # evaluate_sentiment()
 

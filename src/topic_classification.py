@@ -70,6 +70,11 @@ CATEGORY_MAP: Dict[int, Dict[str, str]] = {
         "fr": "le sport, les championnats et les compétitions sportives",
         "en": "sports, championships and athletic competitions",
     },
+    10: {
+        "ar": "الثقافة والفنون والأدب والفعاليات الاجتماعية والثقافية",
+        "fr": "la culture, les arts, la littérature et les événements sociaux et culturels",
+        "en": "culture, arts, literature and social and cultural events",
+    },
 }
 
 # What gets stored in DB (short label)
@@ -83,7 +88,8 @@ CATEGORY_DISPLAY: Dict[int, Dict[str, str]] = {
     6: {"ar": "العدالة", "fr": "Justice", "en": "Justice"},
     7: {"ar": "الصحة", "fr": "Santé", "en": "Health"},
     8: {"ar": "الطقس", "fr": "Météo", "en": "Weather"},
-    9: {"ar": "الرياضة", "fr": "Sport", "en": "Sports"},
+    9: {"ar": "الرياضة", "fr": "Sport",    "en": "Sports"},
+    10: {"ar": "الثقافة", "fr": "Culture",  "en": "Culture"},
 }
 
 
