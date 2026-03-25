@@ -20,7 +20,8 @@ from src.sentiment_analysis import (
     probs_norm_camel_3class,
     probs_norm_3class_financial,
 )
-from src.topic_classification import DEFAULT_TOPIC_PARAMS, CATEGORY_MAP
+from src.topic.bertopic_wrapper import BERTopicWrapper
+from src.topic.top2vec_wrapper import Top2VecWrapper
 from src.preprocessing.router import (
     PREPROCESS_LANG_DETECT_PARAMS,
     PREPROCESS_NER_PARAMS,
@@ -73,30 +74,14 @@ SENT_MODELS_BY_LANG = {
     "fr": [(3, Config.FR_SENTIMENT_MODEL, probs_norm_3class_posnegneu)],
 }
 
-TOPIC_MODELS_BY_LANG = {
-    "ar": [
-        (0, Config.TOPIC_MODEL_1),
-        (1, Config.TOPIC_MODEL_2),
-        (2, Config.TOPIC_MODEL_3),
-        (3, Config.TOPIC_MODEL_4),
-    ],
-    "en": [
-        (0, Config.TOPIC_MODEL_1),
-        (1, Config.TOPIC_MODEL_2),
-        (2, Config.TOPIC_MODEL_3),
-        (3, Config.TOPIC_MODEL_4),
-    ],
-    "fr": [
-        (0, Config.TOPIC_MODEL_1),
-        (1, Config.TOPIC_MODEL_2),
-        (2, Config.TOPIC_MODEL_3),
-        (3, Config.TOPIC_MODEL_4),
-    ],
-}
+BATCH_TOPIC_MODELS = [
+    (0, "BERTopic"),
+    (1, "Top2Vec"),
+]
 
 NER_PARAMS       = dict(DEFAULT_NER_PARAMS)
 SENTIMENT_PARAMS = dict(DEFAULT_SENTIMENT_PARAMS)
-TOPIC_PARAMS     = dict(DEFAULT_TOPIC_PARAMS)
+TOPIC_PARAMS     = {"embedding_model": Config.TOPIC_EMBEDDING_MODEL}
 
 
 # ---------------------------------------------------------------------------
@@ -106,7 +91,7 @@ TOPIC_PARAMS     = dict(DEFAULT_TOPIC_PARAMS)
 def main():
     pipeline_t0 = time.perf_counter()
 
-    sample_size = 2000
+    sample_size = 100
     raw_table   = getattr(Config, "RAW_TABLE", "article")
 
     # ---- Build run_config (for logging / reproducibility) ----
@@ -143,14 +128,14 @@ def main():
             "sentiment":   {"ar": PREPROCESS_SENTIMENT_PARAMS,   "latin": LATIN_SENTIMENT_PARAMS},
             "topic":       {"ar": PREPROCESS_SENTIMENT_PARAMS,   "latin": LATIN_TOPIC_PARAMS},
         },
-        "topic_classification": {
+        "topic_modeling": {
             "params":     TOPIC_PARAMS,
-            "categories": {str(k): v for k, v in CATEGORY_MAP.items()},
+            "models":     BATCH_TOPIC_MODELS,
         },
         "models": {
             "ner":       NER_MODELS_BY_LANG,
             "sentiment": {k: [(mv, name) for mv, name, _ in v] for k, v in SENT_MODELS_BY_LANG.items()},
-            "topic":     TOPIC_MODELS_BY_LANG,
+            "topic":     BATCH_TOPIC_MODELS,
         },
     }
 
@@ -191,7 +176,7 @@ def main():
     #     work_df=work_df,
     #     ner_models_by_lang=NER_MODELS_BY_LANG,
     #     sent_models_by_lang=SENT_MODELS_BY_LANG,
-    #     topic_models_by_lang=TOPIC_MODELS_BY_LANG,
+    #     batch_topic_models=BATCH_TOPIC_MODELS,
     #     ner_params=NER_PARAMS,
     #     sentiment_params=SENTIMENT_PARAMS,
     #     topic_params=TOPIC_PARAMS,
@@ -211,7 +196,7 @@ def main():
             db=db,
             ner_models_by_lang=NER_MODELS_BY_LANG,
             sent_models_by_lang=SENT_MODELS_BY_LANG,
-            topic_models_by_lang=TOPIC_MODELS_BY_LANG,
+            batch_topic_models=BATCH_TOPIC_MODELS,
             ner_params=NER_PARAMS,
             sentiment_params=SENTIMENT_PARAMS,
             topic_params=TOPIC_PARAMS,

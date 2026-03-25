@@ -73,11 +73,8 @@ class Config:
 
 
 
-    # Topic Classification 
-    TOPIC_MODEL_1 = "joeddav/xlm-roberta-large-xnli"
-    TOPIC_MODEL_2 = "MoritzLaurer/mDeBERTa-v3-base-mnli-xnli" 
-    TOPIC_MODEL_3 = "MoritzLaurer/mDeBERTa-v3-base-xnli-multilingual-nli-2mil7"
-    TOPIC_MODEL_4 = "MoritzLaurer/DeBERTa-v3-large-mnli-fever-anli-ling-wanli"
+    # Topic Modeling
+    TOPIC_EMBEDDING_MODEL = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
 
     # ========================================
     # Pipeline Runtime Parameters

@@ -24,7 +24,6 @@ import torch
 from src.config import Config
 from src.ner_extraction import TransformersNER, DEFAULT_NER_PARAMS
 from src.sentiment_analysis import TransformersSentiment, DEFAULT_SENTIMENT_PARAMS
-from src.topic_classification import TransformersTopic, DEFAULT_TOPIC_PARAMS
 
 
 def run_cpu_pass(
@@ -33,7 +32,6 @@ def run_cpu_pass(
     sent_models_by_lang: Dict[str, list],
     ner_params: dict,
     sentiment_params: dict,
-    topic_params: dict,
     logger: logging.Logger,
 ) -> tuple[dict, dict, dict]:
     """
@@ -45,7 +43,6 @@ def run_cpu_pass(
         sent_models_by_lang:{lang: [(model_version, model_name, norm_fn), ...]}
         ner_params:         NER hyperparameters.
         sentiment_params:   Sentiment hyperparameters.
-        topic_params:       Topic hyperparameters.
         logger:             Logger instance.
 
     Returns:
@@ -76,13 +73,7 @@ def run_cpu_pass(
         for lang, models in sent_models_by_lang.items()
     }
 
-    topic_cpu = TransformersTopic(
-        model_name=Config.TOPIC_MODEL,
-        logger=logger,
-        preprocessor=None,
-        device=cpu_device,
-        **topic_params,
-    )
+    # Topic cpu inference removed (batch topic mode now handles this separately if needed)
 
     # ---- Timed inference ----
     with torch.inference_mode():
@@ -100,12 +91,12 @@ def run_cpu_pass(
                 _ = model.predict(r.text_sentiment)
                 cpu_time_sentiment_ms[(aid, mv)] = cpu_time_sentiment_ms.get((aid, mv), 0) + int((time.perf_counter() - t0) * 1000)
 
-            t0 = time.perf_counter()
-            _ = topic_cpu.predict(r.text_topic, lang=lang)
-            cpu_time_topic_ms[aid] = int((time.perf_counter() - t0) * 1000)
+            # t0 = time.perf_counter()
+            # _ = topic_cpu.predict(r.text_topic, lang=lang)
+            # cpu_time_topic_ms[aid] = int((time.perf_counter() - t0) * 1000)
 
     # ---- Cleanup ----
-    del ner_cpu_models_by_lang, sent_cpu_models_by_lang, topic_cpu
+    del ner_cpu_models_by_lang, sent_cpu_models_by_lang
     gc.collect()
 
     return cpu_time_ner_ms, cpu_time_sentiment_ms, cpu_time_topic_ms

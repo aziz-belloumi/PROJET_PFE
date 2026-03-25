@@ -549,7 +549,8 @@ def generate_statistics():
 def run_evaluation():
 
     print("--- Starting Topic Evaluation ---")
-    evaluate_topics()
+    # evaluate_topics()  # DISABLED: Unsupervised dynamic topic labels are no longer compatible with zero-shot evaluations
+    print("Zero-shot topic evaluation is currently disabled after moving to dynamic batch topic models (BERTopic / Top2Vec).")
 
     # --- Sentiment evaluation DISABLED ---
     # print("\n--- Starting Sentiment Evaluation ---")
