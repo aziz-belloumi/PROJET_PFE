@@ -15,8 +15,8 @@ sys.path.insert(0, str(PROJECT_ROOT))
 from src.db_config import DatabaseConnection  # noqa: E402
 
 
-# Model version identifiers used throughout the pipeline (mv0..mv3)
-MODEL_VERSIONS = [0, 1, 2, 3]
+# Model version identifiers: 0=LLM (unified model)
+MODEL_VERSIONS = [0]
 
 
 
@@ -63,7 +63,6 @@ def main(n_ar: int = 300, n_en: int = 300, raw_table: str = "article") -> Path |
             FROM {raw_table} a
             JOIN articles_enriched ae ON ae.article_id = a.id
               AND ae.language = 'ar'
-              AND CHAR_LENGTH(a.body) >= 150
               AND EXISTS (SELECT 1 FROM article_topics t WHERE t.article_id = a.id)
               AND EXISTS (SELECT 1 FROM article_entities ane WHERE ane.article_id = a.id)
             GROUP BY a.id
@@ -77,7 +76,6 @@ def main(n_ar: int = 300, n_en: int = 300, raw_table: str = "article") -> Path |
             JOIN articles_enriched ae ON ae.article_id = a.id
             WHERE a.body IS NOT NULL
               AND ae.language = 'en'
-              AND CHAR_LENGTH(a.body) >= 150
               AND EXISTS (SELECT 1 FROM article_topics t WHERE t.article_id = a.id)
               AND EXISTS (SELECT 1 FROM article_entities ane WHERE ane.article_id = a.id)
             GROUP BY a.id

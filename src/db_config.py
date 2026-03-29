@@ -68,11 +68,10 @@ class DatabaseConnection:
             self.logger.info("Creating enriched tables...")
             with self.engine.connect() as conn:
 
-                # 1) articles_enriched (rows multiplied by 3 via model_version)
+                # 1) articles_enriched (unified LLM results)
                 conn.execute(text("""
                 CREATE TABLE IF NOT EXISTS articles_enriched (
                     article_id BIGINT NOT NULL,
-                    model_version TINYINT NOT NULL,  -- 0=arabert, 1=camel, 2=mbert
 
                     language VARCHAR(10),
 
@@ -86,9 +85,8 @@ class DatabaseConnection:
                     gpu_time_sentiment BIGINT,
                     gpu_time_topic BIGINT,
 
-                    PRIMARY KEY (article_id, model_version),
-                    INDEX idx_lang (language), /*Language index : for filtering by language*/
-                    INDEX idx_model (model_version) /*Model index : for filtering by model*/
+                    PRIMARY KEY (article_id),
+                    INDEX idx_lang (language) /*Language index : for filtering by language*/
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 /*InnoDB is the default MySQL engine*/
                 """))
 
@@ -127,18 +125,16 @@ class DatabaseConnection:
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
                 """))
 
-                # 4) article_topics (no rank)
+                # 4) article_topics (unified LLM results)
                 conn.execute(text("""
                 CREATE TABLE IF NOT EXISTS article_topics (
                     article_id BIGINT NOT NULL,
-                    model_version TINYINT NOT NULL,  -- 0=joeddav, 1=mDeBERTa-base, 2=mDeBERTa-multi, 3=DeBERTa-large
                     topic_label VARCHAR(100) NOT NULL,
                     topic_score FLOAT,
 
-                    PRIMARY KEY (article_id, model_version),
+                    PRIMARY KEY (article_id),
                     INDEX idx_article (article_id),
-                    INDEX idx_topic (topic_label),
-                    INDEX idx_model (model_version)
+                    INDEX idx_topic (topic_label)
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
                 """))
 
@@ -160,7 +156,6 @@ class DatabaseConnection:
     def upsert_articles_enriched( # is called an UPSERT (insert if new, update if existing)
         self,
         article_id: int,
-        model_version: int,
         language: str | None = None,
         sentiment_label: str | None = None,
         sentiment_score: float | None = None,
@@ -173,12 +168,12 @@ class DatabaseConnection:
     ):
         sql = """
         INSERT INTO articles_enriched (
-            article_id, model_version, language,
+            article_id, language,
             sentiment_label, sentiment_score,
             cpu_time_ner, cpu_time_sentiment, cpu_time_topic,
             gpu_time_ner, gpu_time_sentiment, gpu_time_topic
         ) VALUES (
-            :aid, :mv, :lang,
+            :aid, :lang,
             :s_lbl, :s_sc,
             :ct_ner, :ct_sent, :ct_top,
             :gt_ner, :gt_sent, :gt_top
@@ -196,7 +191,6 @@ class DatabaseConnection:
         """
         self.execute_query(sql, {
             "aid": int(article_id),
-            "mv": int(model_version),
             "lang": language,
             "s_lbl": sentiment_label,
             "s_sc": sentiment_score,
@@ -303,20 +297,18 @@ class DatabaseConnection:
     def upsert_article_topic(
         self,
         article_id: int,
-        model_version: int,
         topic_label: str,
         topic_score: float | None = None,
     ):
         sql = """
-        INSERT INTO article_topics (article_id, model_version, topic_label, topic_score)
-        VALUES (:aid, :mv, :lab, :sc)
+        INSERT INTO article_topics (article_id, topic_label, topic_score)
+        VALUES (:aid, :lab, :sc)
         ON DUPLICATE KEY UPDATE
             topic_label = VALUES(topic_label),
             topic_score = VALUES(topic_score)
         """
         self.execute_query(sql, {
             "aid": int(article_id),
-            "mv": int(model_version),
             "lab": str(topic_label),
             "sc": float(topic_score) if topic_score is not None else None,
         })

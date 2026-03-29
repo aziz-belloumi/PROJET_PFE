@@ -59,22 +59,23 @@ class Config:
     ARABERT_NER_MODEL = "hatmimoha/arabic-ner"
     CAMEL_NER_MODEL = "CAMeL-Lab/bert-base-arabic-camelbert-msa-ner"
 
-    ARABERT_SENTIMENT_MODEL = "PRAli22/AraBert-Arabic-Sentiment-Analysis"
-    CAMEL_SENTIMENT_MODEL = "CAMeL-Lab/bert-base-arabic-camelbert-msa-sentiment"
+    # Unified LLM model for both sentiment and topic analysis
+    LLM_MODEL = "qwen2.5:7b"
 
     # English 
     EN_NER_MODEL = "dslim/bert-base-NER"
-    # EN_SENTIMENT_MODEL = "cardiffnlp/twitter-roberta-base-sentiment-latest"
-    EN_SENTIMENT_MODEL = "mrm8488/distilroberta-finetuned-financial-news-sentiment-analysis"
 
     # French 
     FR_NER_MODEL = "Jean-Baptiste/camembert-ner"
-    FR_SENTIMENT_MODEL = "cardiffnlp/twitter-xlm-roberta-base-sentiment"
 
 
 
-    # Topic Modeling
-    TOPIC_EMBEDDING_MODEL = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+    # ========================================
+    # Topic Extraction
+    # ========================================
+
+    # Uses the same unified LLM model as sentiment analysis
+
 
     # ========================================
     # Pipeline Runtime Parameters

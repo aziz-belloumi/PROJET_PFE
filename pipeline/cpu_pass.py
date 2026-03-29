@@ -2,13 +2,17 @@
 """
 Stage 2 — CPU Timing Pass
 
-Loads all NER, Sentiment, and Topic models on CPU and runs inference
-on every article in work_df purely to record timing. Results are discarded.
+Loads all NER and Sentiment models on CPU and runs inference on every article
+in work_df purely to record timing. Results are discarded.
+
+Topic timing is omitted from the CPU pass because the new per-article
+topic extractors (BARTTopic, FlanT5Topic) are GPU-only and measured
+exclusively in the GPU pass.
 
 Returns:
     cpu_time_ner_ms       — dict[(article_id, model_version), int]  milliseconds
     cpu_time_sentiment_ms — dict[(article_id, model_version), int]
-    cpu_time_topic_ms     — dict[article_id, int]
+    cpu_time_topic_ms     — dict (always empty — topic timing is in GPU pass)
 """
 
 from __future__ import annotations
@@ -23,7 +27,7 @@ import torch
 
 from src.config import Config
 from src.ner_extraction import TransformersNER, DEFAULT_NER_PARAMS
-from src.sentiment_analysis import TransformersSentiment, DEFAULT_SENTIMENT_PARAMS
+from src.sentiment_analysis import LLMSentiment, DEFAULT_SENTIMENT_PARAMS
 
 
 def run_cpu_pass(
@@ -35,7 +39,7 @@ def run_cpu_pass(
     logger: logging.Logger,
 ) -> tuple[dict, dict, dict]:
     """
-    Timed CPU inference across all models and articles.
+    Timed CPU inference across NER and Sentiment models.
 
     Args:
         work_df:            Articles DataFrame with preprocessed text columns.
@@ -47,6 +51,8 @@ def run_cpu_pass(
 
     Returns:
         (cpu_time_ner_ms, cpu_time_sentiment_ms, cpu_time_topic_ms)
+        cpu_time_topic_ms is always an empty dict; topic timing lives in
+        the GPU pass.
     """
     cpu_device = Config.CPU_DEVICE
 
@@ -67,13 +73,11 @@ def run_cpu_pass(
 
     sent_cpu_models_by_lang = {
         lang: [
-            (mv, TransformersSentiment(model_name=name, logger=logger, preprocessor=None, device=cpu_device, probs_normalizer=norm, **sentiment_params))
-            for mv, name, norm in models
+            (mv, LLMSentiment(logger=logger, preprocessor=None))
+            for mv, name in models
         ]
         for lang, models in sent_models_by_lang.items()
     }
-
-    # Topic cpu inference removed (batch topic mode now handles this separately if needed)
 
     # ---- Timed inference ----
     with torch.inference_mode():
@@ -88,12 +92,8 @@ def run_cpu_pass(
 
             for mv, model in sent_cpu_models_by_lang.get(lang, []):
                 t0 = time.perf_counter()
-                _ = model.predict(r.text_sentiment)
+                _ = model.predict(r.text_sentiment, lang)
                 cpu_time_sentiment_ms[(aid, mv)] = cpu_time_sentiment_ms.get((aid, mv), 0) + int((time.perf_counter() - t0) * 1000)
-
-            # t0 = time.perf_counter()
-            # _ = topic_cpu.predict(r.text_topic, lang=lang)
-            # cpu_time_topic_ms[aid] = int((time.perf_counter() - t0) * 1000)
 
     # ---- Cleanup ----
     del ner_cpu_models_by_lang, sent_cpu_models_by_lang

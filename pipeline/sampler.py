@@ -107,7 +107,6 @@ def run_sampling(
     for r in skipped_df.itertuples(index=False):
         db.upsert_articles_enriched(
             article_id=int(r.id),
-            model_version=0,
             language=str(r.lang),
             sentiment_label="SKIPPED",
         )
@@ -135,7 +134,6 @@ def run_sampling(
     for r in work_df.itertuples(index=False):
         aid  = int(r.id)
         lang = str(r.lang)
-        for mv, _ in ner_models_by_lang.get(lang, []):
-            db.upsert_articles_enriched(article_id=aid, model_version=mv, language=lang)
+        db.upsert_articles_enriched(article_id=aid, language=lang)
 
     return work_df, skipped_df

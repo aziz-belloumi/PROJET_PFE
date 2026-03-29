@@ -15,13 +15,7 @@ from src.db_config import DatabaseConnection
 from src.ner_extraction import DEFAULT_NER_PARAMS
 from src.sentiment_analysis import (
     DEFAULT_SENTIMENT_PARAMS,
-    probs_norm_prali22_4class,
-    probs_norm_3class_posnegneu,
-    probs_norm_camel_3class,
-    probs_norm_3class_financial,
 )
-from src.topic.bertopic_wrapper import BERTopicWrapper
-from src.topic.top2vec_wrapper import Top2VecWrapper
 from src.preprocessing.router import (
     PREPROCESS_LANG_DETECT_PARAMS,
     PREPROCESS_NER_PARAMS,
@@ -37,7 +31,6 @@ from pipeline.cpu_pass import run_cpu_pass
 from pipeline.gpu_pass import run_gpu_pass
 from pipeline.exporter import export_lang_samples_csv
 
-from comparison.report_generator import generate_comparison_report
 from analysis.report_generator   import generate_analytics_reports
 
 
@@ -66,22 +59,19 @@ NER_MODELS_BY_LANG = {
 }
 
 SENT_MODELS_BY_LANG = {
-    "ar": [
-        (0, Config.ARABERT_SENTIMENT_MODEL, probs_norm_prali22_4class),
-        (1, Config.CAMEL_SENTIMENT_MODEL,   probs_norm_camel_3class),
-    ],
-    "en": [(2, Config.EN_SENTIMENT_MODEL, probs_norm_3class_financial)],
-    "fr": [(3, Config.FR_SENTIMENT_MODEL, probs_norm_3class_posnegneu)],
+    "ar": [(0, Config.LLM_MODEL)],
+    "en": [(0, Config.LLM_MODEL)],
+    "fr": [(0, Config.LLM_MODEL)],
 }
 
-BATCH_TOPIC_MODELS = [
-    (0, "BERTopic"),
-    (1, "Top2Vec"),
+# Topic extractors: (model_version, extractor_type)
+# extractor_type must be 'llm'
+TOPIC_EXTRACTORS = [
+    (0, "llm"),
 ]
 
 NER_PARAMS       = dict(DEFAULT_NER_PARAMS)
 SENTIMENT_PARAMS = dict(DEFAULT_SENTIMENT_PARAMS)
-TOPIC_PARAMS     = {"embedding_model": Config.TOPIC_EMBEDDING_MODEL}
 
 
 # ---------------------------------------------------------------------------
@@ -91,7 +81,7 @@ TOPIC_PARAMS     = {"embedding_model": Config.TOPIC_EMBEDDING_MODEL}
 def main():
     pipeline_t0 = time.perf_counter()
 
-    sample_size = 100
+    sample_size = 5
     raw_table   = getattr(Config, "RAW_TABLE", "article")
 
     # ---- Build run_config (for logging / reproducibility) ----
@@ -128,14 +118,20 @@ def main():
             "sentiment":   {"ar": PREPROCESS_SENTIMENT_PARAMS,   "latin": LATIN_SENTIMENT_PARAMS},
             "topic":       {"ar": PREPROCESS_SENTIMENT_PARAMS,   "latin": LATIN_TOPIC_PARAMS},
         },
-        "topic_modeling": {
-            "params":     TOPIC_PARAMS,
-            "models":     BATCH_TOPIC_MODELS,
+        "topic_extraction": {
+            "extractors": [
+                {
+                    "model_version": mv,
+                    "type": etype,
+                    "model": Config.LLM_MODEL,
+                }
+                for mv, etype in TOPIC_EXTRACTORS
+            ],
         },
         "models": {
             "ner":       NER_MODELS_BY_LANG,
-            "sentiment": {k: [(mv, name) for mv, name, _ in v] for k, v in SENT_MODELS_BY_LANG.items()},
-            "topic":     BATCH_TOPIC_MODELS,
+            "sentiment": {k: [(mv, name) for mv, name in v] for k, v in SENT_MODELS_BY_LANG.items()},
+            "topic":     TOPIC_EXTRACTORS,
         },
     }
 
@@ -176,10 +172,8 @@ def main():
     #     work_df=work_df,
     #     ner_models_by_lang=NER_MODELS_BY_LANG,
     #     sent_models_by_lang=SENT_MODELS_BY_LANG,
-    #     batch_topic_models=BATCH_TOPIC_MODELS,
     #     ner_params=NER_PARAMS,
     #     sentiment_params=SENTIMENT_PARAMS,
-    #     topic_params=TOPIC_PARAMS,
     #     logger=logger,
     # )
 
@@ -196,10 +190,9 @@ def main():
             db=db,
             ner_models_by_lang=NER_MODELS_BY_LANG,
             sent_models_by_lang=SENT_MODELS_BY_LANG,
-            batch_topic_models=BATCH_TOPIC_MODELS,
+            topic_extractors=TOPIC_EXTRACTORS,
             ner_params=NER_PARAMS,
             sentiment_params=SENTIMENT_PARAMS,
-            topic_params=TOPIC_PARAMS,
             cpu_time_ner_ms=cpu_time_ner_ms,
             cpu_time_sentiment_ms=cpu_time_sentiment_ms,
             cpu_time_topic_ms=cpu_time_topic_ms,
@@ -218,14 +211,8 @@ def main():
         )
 
     # ================================================================
-    # STAGE 5 — Comparison & Analytics Reports
+    # STAGE 5 — Analytics Reports
     # ================================================================
-    try:
-        generate_comparison_report(run_dir=run_dir)
-        logger.info("Comparison CSVs generated.")
-    except Exception as e:
-        logger.error(f"Comparison report failed: {e}")
-
     try:
         generate_analytics_reports(
             run_dir=run_dir,
