@@ -43,14 +43,12 @@ def topics_by_month(engine, raw_table: str = "article") -> pd.DataFrame:
     Output (one row per month x topic):
       year_month ("YYYY-MM"), topic_label,
       articles_count, topic_share,
-      mean_topic_score, median_topic_score,
       total_articles_in_month
     """
     query = f"""
         SELECT
             t.article_id,
             t.topic_label,
-            t.topic_score,
             a.crawl_date,
             a.year,
             a.month
@@ -64,7 +62,6 @@ def topics_by_month(engine, raw_table: str = "article") -> pd.DataFrame:
     if df.empty:
         return pd.DataFrame()
 
-    df["topic_score"] = pd.to_numeric(df["topic_score"], errors="coerce")
     df["topic_label"] = df["topic_label"].astype(str).str.strip()
 
     # internal month bucket (Timestamp at month-start)
@@ -85,13 +82,8 @@ def topics_by_month(engine, raw_table: str = "article") -> pd.DataFrame:
         df.groupby(["year_month", "topic_label"], as_index=False)
           .agg(
               articles_count=("article_id", "nunique"),
-              mean_topic_score=("topic_score", "mean"),
-              median_topic_score=("topic_score", "median"),
           )
     )
-
-    agg["mean_topic_score"] = agg["mean_topic_score"].round(4)
-    agg["median_topic_score"] = agg["median_topic_score"].round(4)
 
     # Total articles per month (for share)
     totals = (
@@ -108,8 +100,8 @@ def topics_by_month(engine, raw_table: str = "article") -> pd.DataFrame:
     agg["topic_share"] = agg["topic_share"].round(4)
 
     agg = agg.sort_values(
-        ["year_month", "articles_count", "mean_topic_score", "topic_label"],
-        ascending=[True, False, False, True],
+        ["year_month", "articles_count", "topic_label"],
+        ascending=[True, False, True],
     ).reset_index(drop=True)
 
     # FINAL DISPLAY: remove day notation
@@ -127,8 +119,6 @@ def dominant_topic_by_month(engine, raw_table: str = "article") -> pd.DataFrame:
       dominant_topic,
       dominant_articles_count,
       dominant_topic_share,
-      dominant_mean_topic_score,
-      dominant_median_topic_score,
       total_articles_in_month
     """
     dist = topics_by_month(engine=engine, raw_table=raw_table)
@@ -138,8 +128,8 @@ def dominant_topic_by_month(engine, raw_table: str = "article") -> pd.DataFrame:
     # pick top topic per month
     top = (
         dist.sort_values(
-            ["year_month", "articles_count", "mean_topic_score", "topic_label"],
-            ascending=[True, False, False, True],
+            ["year_month", "articles_count", "topic_label"],
+            ascending=[True, False, True],
         )
         .groupby("year_month", as_index=False)
         .first()
@@ -149,8 +139,6 @@ def dominant_topic_by_month(engine, raw_table: str = "article") -> pd.DataFrame:
         "topic_label": "dominant_topic",
         "articles_count": "dominant_articles_count",
         "topic_share": "dominant_topic_share",
-        "mean_topic_score": "dominant_mean_topic_score",
-        "median_topic_score": "dominant_median_topic_score",
     })
 
     cols = [
@@ -158,8 +146,6 @@ def dominant_topic_by_month(engine, raw_table: str = "article") -> pd.DataFrame:
         "dominant_topic",
         "dominant_articles_count",
         "dominant_topic_share",
-        "dominant_mean_topic_score",
-        "dominant_median_topic_score",
         "total_articles_in_month",
     ]
     return top[cols].sort_values("year_month").reset_index(drop=True)

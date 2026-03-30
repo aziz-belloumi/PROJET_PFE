@@ -81,7 +81,7 @@ SENTIMENT_PARAMS = dict(DEFAULT_SENTIMENT_PARAMS)
 def main():
     pipeline_t0 = time.perf_counter()
 
-    sample_size = 5
+    sample_size = 20
     raw_table   = getattr(Config, "RAW_TABLE", "article")
 
     # ---- Build run_config (for logging / reproducibility) ----

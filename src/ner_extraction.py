@@ -8,6 +8,11 @@ import logging
 import torch
 from transformers import AutoTokenizer, AutoModelForTokenClassification, pipeline
 
+
+class ModelLoadError(Exception):
+    """Raised when a model fails to load from Hugging Face."""
+    pass
+
 from src.chunking import token_chunks
 
 
@@ -210,8 +215,12 @@ class TransformersNER:
             device = 0 if torch.cuda.is_available() else -1
         self.device = device
 
-        self.tokenizer = AutoTokenizer.from_pretrained(model_name, use_fast=True)
-        self.model = AutoModelForTokenClassification.from_pretrained(model_name)
+        try:
+            self.tokenizer = AutoTokenizer.from_pretrained(model_name, use_fast=True)
+            self.model = AutoModelForTokenClassification.from_pretrained(model_name)
+        except Exception as e:
+            self.logger.error(f"Failed to load model '{model_name}': {e}")
+            raise ModelLoadError(f"Model '{model_name}' could not be loaded: {e}") from e
 
         self.nlp = pipeline(
             task="token-classification",

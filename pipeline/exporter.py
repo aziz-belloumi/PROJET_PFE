@@ -23,10 +23,10 @@ def export_lang_samples_csv(
     logger: logging.Logger,
 ) -> None:
     """
-    Write english_samples.csv and french_samples.csv to run_dir.
+    Write processed_articles.csv to run_dir with all processed articles.
 
-    Only EN and FR articles are exported; Arabic is skipped.
-    Files are only created when the respective language has at least one row.
+    Includes all languages (AR, EN, FR) with their preprocessing results and NLP outputs.
+    Files are only created when there are processed articles.
 
     Args:
         run_dir:               Directory to write CSVs into.
@@ -38,55 +38,43 @@ def export_lang_samples_csv(
     """
     rows = []
 
-    # Get a distinct set of model versions from the topic buffer (or default to 0, 1, 2, 3)
+    # Get a distinct set of model versions from the topic buffer (or default to 0)
     topic_mvs = {k[1] for k in topic_results_buffer.keys() if isinstance(k, tuple) and len(k) == 2}
     if not topic_mvs:
-        topic_mvs = {0, 1, 2, 3}
+        topic_mvs = {0}
 
     for r in work_df.itertuples(index=False):
         aid  = int(r.id)
         lang = str(r.lang)
 
-        if lang not in {"en", "fr"}:
-            continue
-
-        mv_sent = 2 if lang == "en" else 3  # Sentiment model_version mapping
-        sent_info  = sent_results_buffer.get((aid, mv_sent), {})
+        # Get sentiment results (model_version 0 for all languages)
+        sent_info = sent_results_buffer.get((aid, 0), {})
 
         row = {
             "article_id":           aid,
             "lang":                 lang,
             "text_raw":             r.text_raw,
-            "sentiment_preprocessed": r.text_sentiment,
-            "ner_preprocessed":     r.text_ner,
-            "topic_preprocessed":   r.text_topic,
+            "text_sentiment_preprocessed": r.text_sentiment,
+            "text_ner_preprocessed": r.text_ner,
+            "text_topic_preprocessed": r.text_topic,
             "sentiment_label":      sent_info.get("label"),
-            "sentiment_score":      sent_info.get("score"),
         }
         
+        # Add topic results for each model version
         for mv in sorted(topic_mvs):
             topic_info = topic_results_buffer.get((aid, mv), {})
             row[f"topic_label_mv{mv}"] = topic_info.get("label")
-            row[f"topic_score_mv{mv}"] = topic_info.get("score")
 
         rows.append(row)
 
     if not rows:
-        logger.info("No EN/FR articles to export — skipping sample CSVs.")
+        logger.info("No processed articles to export — skipping results CSV.")
         return
 
     out_df = pd.DataFrame(rows)
     run_dir = Path(run_dir)
 
-    en_df = out_df[out_df["lang"] == "en"].copy()
-    fr_df = out_df[out_df["lang"] == "fr"].copy()
-
-    if not en_df.empty:
-        path = run_dir / "english_samples.csv"
-        en_df.to_csv(path, index=False, encoding="utf-8-sig")
-        logger.info(f"Saved {len(en_df)} EN rows → {path.name}")
-
-    if not fr_df.empty:
-        path = run_dir / "french_samples.csv"
-        fr_df.to_csv(path, index=False, encoding="utf-8-sig")
-        logger.info(f"Saved {len(fr_df)} FR rows → {path.name}")
+    # Create comprehensive results CSV
+    path = run_dir / "processed_articles.csv"
+    out_df.to_csv(path, index=False, encoding="utf-8-sig")
+    logger.info(f"Saved {len(out_df)} processed articles → {path.name}")

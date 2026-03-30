@@ -38,7 +38,7 @@ import torch
 
 from src.config import Config
 from src.db_config import DatabaseConnection
-from src.ner_extraction import TransformersNER, DEFAULT_NER_PARAMS
+from src.ner_extraction import TransformersNER, DEFAULT_NER_PARAMS, ModelLoadError
 from src.sentiment_analysis import LLMSentiment, DEFAULT_SENTIMENT_PARAMS
 from src.preprocessing import PreprocessRouter
 from src.topic_generation import LLMTopic
@@ -153,13 +153,17 @@ def run_gpu_pass(
 
             for mv, name in models:
                 logger.info(f"[GPU][NER] lang={lang} model_version={mv}: {name}")
-                ner = TransformersNER(
-                    model_name=name,
-                    logger=logger,
-                    preprocessor=None,
-                    device=gpu_device,
-                    **ner_params,
-                )
+                try:
+                    ner = TransformersNER(
+                        model_name=name,
+                        logger=logger,
+                        preprocessor=None,
+                        device=gpu_device,
+                        **ner_params,
+                    )
+                except ModelLoadError as e:
+                    logger.error(f"Skipping model {name} due to load error: {e}")
+                    continue
 
                 for r in lang_subset.itertuples(index=False):
                     aid = int(r.id)
@@ -236,7 +240,6 @@ def run_gpu_pass(
                 db.upsert_article_topic(
                     article_id=aid,
                     topic_label=label,
-                    topic_score=0.0,
                 )
                 continue
 
@@ -265,7 +268,6 @@ def run_gpu_pass(
             db.upsert_article_topic(
                 article_id=aid,
                 topic_label=safe_label,
-                topic_score=safe_score,
             )
 
         del extractor
@@ -292,7 +294,6 @@ def run_gpu_pass(
             article_id=aid,
             language=lang,
             sentiment_label=sent_info.get("label"),
-            sentiment_score=sent_info.get("score"),
             cpu_time_ner=cpu_time_ner_ms.get((aid, 0)),
             cpu_time_sentiment=cpu_time_sentiment_ms.get((aid, 0)),
             cpu_time_topic=cpu_time_topic_ms.get((aid, 0)),

@@ -69,6 +69,7 @@ class DatabaseConnection:
             with self.engine.connect() as conn:
 
                 # 1) articles_enriched (unified LLM results)
+                self.logger.info("Creating articles_enriched table...")
                 conn.execute(text("""
                 CREATE TABLE IF NOT EXISTS articles_enriched (
                     article_id BIGINT NOT NULL,
@@ -76,7 +77,6 @@ class DatabaseConnection:
                     language VARCHAR(10),
 
                     sentiment_label VARCHAR(10),
-                    sentiment_score FLOAT,
 
                     cpu_time_ner BIGINT,
                     cpu_time_sentiment BIGINT,
@@ -86,11 +86,12 @@ class DatabaseConnection:
                     gpu_time_topic BIGINT,
 
                     PRIMARY KEY (article_id),
-                    INDEX idx_lang (language) /*Language index : for filtering by language*/
-                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 /*InnoDB is the default MySQL engine*/
+                    INDEX idx_lang (language)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
                 """))
 
                 # 2) entities dictionary
+                self.logger.info("Creating entities table...")
                 conn.execute(text("""
                 CREATE TABLE IF NOT EXISTS entities (
                     entity_id BIGINT AUTO_INCREMENT PRIMARY KEY,
@@ -99,7 +100,7 @@ class DatabaseConnection:
                     normalized_name VARCHAR(512) NOT NULL,
                     frequency INT DEFAULT 0,
 
-                    UNIQUE KEY uq_entity (entity_type, normalized_name), /*This prevents duplicate entities of the same type.*/
+                    UNIQUE KEY uq_entity (entity_type, normalized_name),
                     INDEX idx_type (entity_type),
                     INDEX idx_norm (normalized_name),
                     INDEX idx_freq (frequency)
@@ -107,11 +108,12 @@ class DatabaseConnection:
                 """))
 
                 # 3) article_entities link (with model_version as number)
+                self.logger.info("Creating article_entities table...")
                 conn.execute(text("""
                 CREATE TABLE IF NOT EXISTS article_entities (
                     article_id BIGINT NOT NULL,
                     entity_id BIGINT NOT NULL,
-                    model_version TINYINT NOT NULL,  -- 0=arabert, 1=camel, 2=mbert
+                    model_version TINYINT NOT NULL,
                     confidence_score FLOAT,
 
                     PRIMARY KEY (article_id, entity_id, model_version),
@@ -126,11 +128,11 @@ class DatabaseConnection:
                 """))
 
                 # 4) article_topics (unified LLM results)
+                self.logger.info("Creating article_topics table...")
                 conn.execute(text("""
                 CREATE TABLE IF NOT EXISTS article_topics (
                     article_id BIGINT NOT NULL,
                     topic_label VARCHAR(100) NOT NULL,
-                    topic_score FLOAT,
 
                     PRIMARY KEY (article_id),
                     INDEX idx_article (article_id),
@@ -158,7 +160,6 @@ class DatabaseConnection:
         article_id: int,
         language: str | None = None,
         sentiment_label: str | None = None,
-        sentiment_score: float | None = None,
         cpu_time_ner: int | None = None,
         cpu_time_sentiment: int | None = None,
         cpu_time_topic: int | None = None,
@@ -169,19 +170,18 @@ class DatabaseConnection:
         sql = """
         INSERT INTO articles_enriched (
             article_id, language,
-            sentiment_label, sentiment_score,
+            sentiment_label,
             cpu_time_ner, cpu_time_sentiment, cpu_time_topic,
             gpu_time_ner, gpu_time_sentiment, gpu_time_topic
         ) VALUES (
             :aid, :lang,
-            :s_lbl, :s_sc,
+            :s_lbl,
             :ct_ner, :ct_sent, :ct_top,
             :gt_ner, :gt_sent, :gt_top
         )
         ON DUPLICATE KEY UPDATE
             language = COALESCE(VALUES(language), language),
             sentiment_label = COALESCE(VALUES(sentiment_label), sentiment_label),
-            sentiment_score = COALESCE(VALUES(sentiment_score), sentiment_score),
             cpu_time_ner = COALESCE(VALUES(cpu_time_ner), cpu_time_ner),
             cpu_time_sentiment = COALESCE(VALUES(cpu_time_sentiment), cpu_time_sentiment),
             cpu_time_topic = COALESCE(VALUES(cpu_time_topic), cpu_time_topic),
@@ -193,7 +193,6 @@ class DatabaseConnection:
             "aid": int(article_id),
             "lang": language,
             "s_lbl": sentiment_label,
-            "s_sc": sentiment_score,
             "ct_ner": cpu_time_ner,
             "ct_sent": cpu_time_sentiment,
             "ct_top": cpu_time_topic,
@@ -298,19 +297,16 @@ class DatabaseConnection:
         self,
         article_id: int,
         topic_label: str,
-        topic_score: float | None = None,
     ):
         sql = """
-        INSERT INTO article_topics (article_id, topic_label, topic_score)
-        VALUES (:aid, :lab, :sc)
+        INSERT INTO article_topics (article_id, topic_label)
+        VALUES (:aid, :lab)
         ON DUPLICATE KEY UPDATE
-            topic_label = VALUES(topic_label),
-            topic_score = VALUES(topic_score)
+            topic_label = VALUES(topic_label)
         """
         self.execute_query(sql, {
             "aid": int(article_id),
             "lab": str(topic_label),
-            "sc": float(topic_score) if topic_score is not None else None,
         })
 
     def close(self):
