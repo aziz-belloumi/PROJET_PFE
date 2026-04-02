@@ -64,9 +64,7 @@ def chunk_article(text, size=CHUNK_SIZE, overlap=CHUNK_OVERLAP):
 
 def build_sentiment_prompt(language, article):
     return f"""
-You are evaluating sentiment classification for news articles.
-
-The article may be written in Arabic, English, or French.
+You are an expert news analyst evaluating the true public sentiment and impact of an article.
 
 Article language: {language}
 
@@ -76,8 +74,12 @@ Article:
 Possible sentiments:
 {SENTIMENT_LIST_TEXT}
 
-Tasks:
-1. Determine the TRUE sentiment of the article.
+Tasks & Guidelines:
+1. Determine the TRUE contextual public impact and consequences of the events described, rather than just looking at surface-level structural words (like "announced" or "witnessed").
+2. Context matters: Scenarios like "unemployment rising" or "economic slowdown" evaluate as NEGATIVE even if framed gently without explicitly negative adjectives.
+3. Domain-specific terms: Words like "austerity", "sanctions", "conflict", and "crisis" inherently describe NEGATIVE events.
+4. Language nuances: Account for formal or diplomatic news registers, especially in Arabic, that may use detached, neutral-sounding objective language to report strictly negative events (e.g., casualties, disasters, economic decline).
+5. Label POSITIVE for events bringing true societal or economic benefit (e.g., peace, growth). Label NEUTRAL only for purely informational or mixed scenarios with no clear directional impact.
 
 Output STRICTLY in this format:
 
@@ -172,35 +174,69 @@ class LLMSentiment:
 
         text = self._preprocess_text(text)
 
-        # Use the first chunk if text is too long
         chunks = chunk_article(text)
-        article_text = chunks[0] if chunks else text
+        if not chunks:
+            chunks = [text]
 
         # Map language code to full name
         lang_map = {"ar": "Arabic", "en": "English", "fr": "French"}
         language = lang_map.get(lang, "English")
 
-        prompt = build_sentiment_prompt(language, article_text)
+        self.logger.info(
+            f"[LLMSentiment] Processing {len(chunks)} chunk(s) "
+            f"(text length={len(text)} chars, lang={lang})"
+        )
 
-        try:
-            response = call_llm(prompt)
-            prediction, detected_lang = parse_llm_response(response)
+        label_scores: dict[str, float] = {}
+        label_counts: dict[str, int]   = {}
 
-            # Normalize prediction
-            norm_prediction = SENTIMENT_NORM.get(prediction.upper(), prediction.upper())
+        for idx, chunk in enumerate(chunks):
+            prompt = build_sentiment_prompt(language, chunk)
+            try:
+                response = call_llm(prompt)
+                prediction, detected_lang = parse_llm_response(response)
 
-            if norm_prediction in ["POSITIVE", "NEGATIVE", "NEUTRAL"]:
-                # Create probabilities - give 1.0 to predicted, 0.0 to others
-                probs = {
-                    "POSITIVE": 1.0 if norm_prediction == "POSITIVE" else 0.0,
-                    "NEGATIVE": 1.0 if norm_prediction == "NEGATIVE" else 0.0,
-                    "NEUTRAL": 1.0 if norm_prediction == "NEUTRAL" else 0.0,
-                }
-                return SentimentResult(label=norm_prediction, score=1.0, probs=probs)
-            else:
-                self.logger.warning(f"[LLMSentiment] Invalid prediction: {prediction}")
-                return SentimentResult(label="UNK", score=0.0, probs={})
+                # Normalize prediction
+                norm_prediction = SENTIMENT_NORM.get(prediction.upper(), prediction.upper())
 
-        except Exception as exc:
-            self.logger.exception(f"[LLMSentiment] Inference failed: {exc}")
+                if norm_prediction in ["POSITIVE", "NEGATIVE", "NEUTRAL"]:
+                    validated_label = norm_prediction
+                    score = 1.0
+                else:
+                    self.logger.warning(f"[LLMSentiment] Invalid prediction: {prediction} - using 'UNK'")
+                    validated_label = "UNK"
+                    score = 0.0
+
+                label_scores[validated_label] = label_scores.get(validated_label, 0.0) + score
+                label_counts[validated_label] = label_counts.get(validated_label, 0) + 1
+
+                self.logger.debug(
+                    f"[LLMSentiment] chunk {idx + 1}/{len(chunks)} → "
+                    f"label='{validated_label}' score={score:.3f}"
+                )
+
+            except Exception as exc:
+                self.logger.warning(
+                    f"[LLMSentiment] chunk {idx + 1}/{len(chunks)} failed: {exc}"
+                )
+
+        if not label_scores:
+            self.logger.error("[LLMSentiment] All chunks failed; returning fallback.")
             return SentimentResult(label="UNK", score=0.0, probs={})
+
+        # Winner = majority vote (highest count), with cumulative score as tiebreaker
+        best_label = max(label_counts, key=lambda lbl: (label_counts[lbl], label_scores[lbl]))
+        mean_score = label_scores[best_label] / label_counts[best_label]
+
+        self.logger.info(
+            f"[LLMSentiment] Aggregated result → label='{best_label}' "
+            f"(votes={label_counts[best_label]}/{len(chunks)}, "
+            f"mean_score={mean_score:.3f})"
+        )
+
+        probs = {
+            "POSITIVE": 1.0 if best_label == "POSITIVE" else 0.0,
+            "NEGATIVE": 1.0 if best_label == "NEGATIVE" else 0.0,
+            "NEUTRAL": 1.0 if best_label == "NEUTRAL" else 0.0,
+        }
+        return SentimentResult(label=best_label, score=mean_score, probs=probs)

@@ -48,7 +48,7 @@ CATEGORY_DISPLAY = {
     14: {"ar": "الدبلوماسية",  "fr": "Diplomatie",     "en": "Diplomacy"},
     15: {"ar": "الدين",        "fr": "Religion",       "en": "Religion"},
     16: {"ar": "الهجرة",       "fr": "Migration",      "en": "Migration"},
-    17: {"ar": "أخرى",         "fr": "Autre",          "en": "Other"},
+    17: {"ar": "عام",         "fr": "Général",          "en": "General"},
 }
 
 # Flat set of every valid label across all languages (for known category validation)
@@ -167,7 +167,7 @@ def parse_llm_response(response_text):
     return prediction, language
 
 
-def validate_prediction(prediction: str, logger: logging.Logger) -> tuple[str, float]:
+def validate_prediction(prediction: str, logger: logging.Logger, lang: str = "en") -> tuple[str, float]:
     """
     Validate the LLM's prediction.
     
@@ -190,14 +190,15 @@ def validate_prediction(prediction: str, logger: logging.Logger) -> tuple[str, f
         # 3. Not "Unknown" or similar fallback terms
         if (word_count >= 1 and 
             word_count <= 3 and 
-            cleaned.lower() not in ['unknown', 'other', 'none', 'n/a', 'unclear']):
+            cleaned.lower() not in ['unknown', 'other', 'none', 'n/a', 'unclear', 'general', 'général', 'عام']):
             
             logger.info(f"[LLMTopic] New category suggested: '{cleaned}'")
             return cleaned, 0.8  # Lower confidence for emergent categories
     
     # Fallback
-    logger.warning(f"[LLMTopic] Invalid prediction: '{prediction}' - using 'Other'")
-    return "Other", 0.0
+    fallback_label = CATEGORY_DISPLAY[17].get(lang, "General")
+    logger.warning(f"[LLMTopic] Invalid prediction: '{prediction}' - using '{fallback_label}'")
+    return fallback_label, 0.0
 
 
 # ---------------------------------------------------------------------------
@@ -212,43 +213,64 @@ class LLMTopic:
         self.logger = logger or logging.getLogger(__name__)
 
     def predict(self, text: str, lang: str) -> TopicResult:
-        """
-        Predict the topic category for a given article.
         
-        Args:
-            text: The article body
-            lang: Language code (ar/en/fr)
-            
-        Returns:
-            TopicResult with label and confidence score
-        """
         if not text or not text.strip():
             self.logger.warning("[LLMTopic] Received empty text; returning fallback.")
-            return TopicResult(label="Other", score=0.0)
+            fallback = CATEGORY_DISPLAY[17].get(lang, "General")
+            return TopicResult(label=fallback, score=0.0)
 
-        # Use the first chunk if text is too long
         chunks = chunk_article(text)
-        article_text = chunks[0] if chunks else text
+        if not chunks:
+            chunks = [text]
 
         # Map language code to full name
         lang_map = {"ar": "Arabic", "en": "English", "fr": "French"}
         language = lang_map.get(lang, "English")
 
-        # Build prompt
-        prompt = build_topic_prompt(language, article_text)
+        self.logger.info(
+            f"[LLMTopic] Processing {len(chunks)} chunk(s) "
+            f"(text length={len(text)} chars, lang={lang})"
+        )
 
-        try:
-            # Call LLM
-            response = call_llm(prompt)
-            prediction, detected_lang = parse_llm_response(response)
+        # Accumulate scores per label across all chunks
+        label_scores: dict[str, float] = {}
+        label_counts: dict[str, int]   = {}
 
-            # Validate and return
-            validated_label, score = validate_prediction(prediction, self.logger)
-            return TopicResult(label=validated_label, score=score)
+        for idx, chunk in enumerate(chunks):
+            prompt = build_topic_prompt(language, chunk)
+            try:
+                response = call_llm(prompt)
+                prediction, _ = parse_llm_response(response)
+                validated_label, score = validate_prediction(prediction, self.logger, lang)
 
-        except Exception as exc:
-            self.logger.exception(f"[LLMTopic] Inference failed: {exc}")
-            return TopicResult(label="Other", score=0.0)
+                label_scores[validated_label] = label_scores.get(validated_label, 0.0) + score
+                label_counts[validated_label] = label_counts.get(validated_label, 0) + 1
+
+                self.logger.debug(
+                    f"[LLMTopic] chunk {idx + 1}/{len(chunks)} → "
+                    f"label='{validated_label}' score={score:.3f}"
+                )
+
+            except Exception as exc:
+                self.logger.warning(
+                    f"[LLMTopic] chunk {idx + 1}/{len(chunks)} failed: {exc}"
+                )
+
+        if not label_scores:
+            self.logger.error("[LLMTopic] All chunks failed; returning fallback.")
+            fallback = CATEGORY_DISPLAY[17].get(lang, "General")
+            return TopicResult(label=fallback, score=0.0)
+
+        # Winner = majority vote (highest count), with cumulative score as tiebreaker
+        best_label = max(label_counts, key=lambda lbl: (label_counts[lbl], label_scores[lbl]))
+        mean_score = label_scores[best_label] / label_counts[best_label]
+
+        self.logger.info(
+            f"[LLMTopic] Aggregated result → label='{best_label}' "
+            f"(votes={label_counts[best_label]}/{len(chunks)}, "
+            f"mean_score={mean_score:.3f})"
+        )
+        return TopicResult(label=best_label, score=mean_score)
 
     def unload(self) -> None:
         """No-op for LLM-based extractor (no model loaded in memory)."""

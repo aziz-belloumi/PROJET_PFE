@@ -50,12 +50,15 @@ def _pkg_version(name: str) -> str:
 # ---------------------------------------------------------------------------
 
 NER_MODELS_BY_LANG = {
-    "ar": [
-        (0, Config.ARABERT_NER_MODEL),
-        (1, Config.CAMEL_NER_MODEL),
-    ],
-    "en": [(2, Config.EN_NER_MODEL)],
-    "fr": [(3, Config.FR_NER_MODEL)],
+    # "ar": [
+    #     (0, Config.ARABERT_NER_MODEL),
+    #     (1, Config.CAMEL_NER_MODEL),
+    # ],
+    # "en": [(2, Config.EN_NER_MODEL)],
+    # "fr": [(3, Config.FR_NER_MODEL)],
+    "ar": [(4, "urchade/gliner_multi-v2.1")],
+    "en": [(4, "urchade/gliner_multi-v2.1")],
+    "fr": [(4, "urchade/gliner_multi-v2.1")],
 }
 
 SENT_MODELS_BY_LANG = {
@@ -81,7 +84,7 @@ SENTIMENT_PARAMS = dict(DEFAULT_SENTIMENT_PARAMS)
 def main():
     pipeline_t0 = time.perf_counter()
 
-    sample_size = 20
+    sample_size = 10
     raw_table   = getattr(Config, "RAW_TABLE", "article")
 
     # ---- Build run_config (for logging / reproducibility) ----
@@ -185,7 +188,14 @@ def main():
         sent_results_buffer  = {}
         topic_results_buffer = {}
     else:
-        sent_results_buffer, topic_results_buffer, *_ = run_gpu_pass(
+        (
+            sent_results_buffer,
+            topic_results_buffer,
+            _,
+            _,
+            _,
+            ner_results_buffer,
+        ) = run_gpu_pass(
             work_df=work_df,
             db=db,
             ner_models_by_lang=NER_MODELS_BY_LANG,
@@ -209,6 +219,17 @@ def main():
             topic_results_buffer=topic_results_buffer,
             logger=logger,
         )
+
+        # Export GLiNER results locally
+        if ner_results_buffer:
+            import pandas as pd
+            gliner_df = pd.DataFrame([
+                {"article_id": aid, "preprocessed_text": data["text_ner"], "entities": ", ".join(data["entities"])}
+                for aid, data in ner_results_buffer.items()
+            ])
+            gliner_csv_path = run_dir / "gliner_ner_results.csv"
+            gliner_df.to_csv(gliner_csv_path, index=False, encoding="utf-8-sig")
+            logger.info(f"GLiNER results saved to {gliner_csv_path}")
 
     # ================================================================
     # STAGE 5 — Analytics Reports

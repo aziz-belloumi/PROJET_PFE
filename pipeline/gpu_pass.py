@@ -1,31 +1,3 @@
-# pipeline/gpu_pass.py
-"""
-Stage 3 — GPU Inference Pass
-
-Runs NER, Sentiment, and Topic models on GPU (model-by-model to avoid OOM).
-Writes all results to the DB (entities, article_entities, article_topics,
-articles_enriched). Returns result buffers for the exporter stage.
-
-Topic extraction:
-- Runs per article using predict(text, lang).
-- BARTTopic  : zero-shot classifier (facebook/bart-large-mnli).
-               Selects the best label from the language-specific candidate list.
-               Returns the top label and its confidence score directly.
-- FlanT5Topic: generative text-to-text extractor (google/flan-t5-large).
-               Generates a short topic label (1-3 words) from a prompt.
-               Score is a documented generation-confidence proxy (mean token probability).
-
-NER stays per-language and per-article.
-Sentiment remains disabled as in the current project state.
-
-Returns:
-    sent_results_buffer   — {(article_id, model_version): {"label", "score"}}
-    topic_results_buffer  — {(article_id, model_version): {"label", "score"}}
-    gpu_time_ner_ms       — {(article_id, model_version): int}
-    gpu_time_sentiment_ms — {(article_id, model_version): int}
-    gpu_time_topic_ms     — {(article_id, model_version): int}
-"""
-
 from __future__ import annotations
 
 import gc
@@ -39,9 +11,10 @@ import torch
 from src.config import Config
 from src.db_config import DatabaseConnection
 from src.ner_extraction import TransformersNER, DEFAULT_NER_PARAMS, ModelLoadError
+from src.ner.gliner_wrapper import GLiNERWrapper
 from src.sentiment_analysis import LLMSentiment, DEFAULT_SENTIMENT_PARAMS
 from src.preprocessing import PreprocessRouter
-from src.topic_generation import LLMTopic
+from src.topic_generation import LLMTopic, CATEGORY_DISPLAY
 
 
 # ---------------------------------------------------------------------------
@@ -89,11 +62,11 @@ def _is_valid_topic_text(text: object, min_chars: int = 30, min_words: int = 5) 
 
 def _fallback_topic_label(reason: str, lang: str) -> str:
     """
-    Standardized topic fallback labels for downstream debugging and analytics.
+    Standardized topic fallback labels.
+    We return the language-specific 'General' label.
     """
-    reason = (reason or "unknown").strip().lower()
-    lang = (lang or "unknown").strip().lower()
-    return f"Topic_Fallback:{reason}:{lang}"
+    lang = (lang or "en").strip().lower()
+    return CATEGORY_DISPLAY[17].get(lang, "General")
 
 
 # ---------------------------------------------------------------------------
@@ -141,6 +114,7 @@ def run_gpu_pass(
     gpu_time_ner_ms: Dict[Tuple[int, int], int] = {}
     gpu_time_sentiment_ms: Dict[Tuple[int, int], int] = {}
     sent_results_buffer: Dict[Tuple[int, int], dict] = {}
+    ner_results_buffer: Dict[int, dict] = {}
 
     logger.info("=== GPU PASS (MODEL-BY-MODEL, WRITE RESULTS TO DB) ===")
 
@@ -154,14 +128,22 @@ def run_gpu_pass(
             for mv, name in models:
                 logger.info(f"[GPU][NER] lang={lang} model_version={mv}: {name}")
                 try:
-                    ner = TransformersNER(
-                        model_name=name,
-                        logger=logger,
-                        preprocessor=None,
-                        device=gpu_device,
-                        **ner_params,
-                    )
-                except ModelLoadError as e:
+                    is_gliner = "gliner" in name.lower()
+                    if is_gliner:
+                        ner = GLiNERWrapper(
+                            model_name=name,
+                            logger=logger,
+                            device=gpu_device
+                        )
+                    else:
+                        ner = TransformersNER(
+                            model_name=name,
+                            logger=logger,
+                            preprocessor=None,
+                            device=gpu_device,
+                            **ner_params,
+                        )
+                except Exception as e:
                     logger.error(f"Skipping model {name} due to load error: {e}")
                     continue
 
@@ -173,6 +155,12 @@ def run_gpu_pass(
                     gpu_time_ner_ms[(aid, mv)] = gpu_time_ner_ms.get((aid, mv), 0) + int(
                         (time.perf_counter() - t0) * 1000
                     )
+
+                    is_gliner = "gliner" in name.lower()
+                    if is_gliner:
+                        if aid not in ner_results_buffer:
+                            ner_results_buffer[aid] = {"text_ner": r.text_ner, "entities": []}
+                        ner_results_buffer[aid]["entities"].extend([f"{e.text} ({e.label})" for e in ents])
 
                     for e in ents:
                         nname = preproc.normalize_entity(e.text, lang)
@@ -308,4 +296,5 @@ def run_gpu_pass(
         gpu_time_ner_ms,
         gpu_time_sentiment_ms,
         gpu_time_topic_ms,
+        ner_results_buffer,
     )
