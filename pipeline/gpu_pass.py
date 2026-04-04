@@ -10,8 +10,7 @@ import torch
 
 from src.config import Config
 from src.db_config import DatabaseConnection
-from src.ner_extraction import TransformersNER, DEFAULT_NER_PARAMS, ModelLoadError
-from src.ner.gliner_wrapper import GLiNERWrapper
+from src.ner_extraction import TransformersNER, GLiNERNER, DEFAULT_NER_PARAMS, ModelLoadError
 from src.sentiment_analysis import LLMSentiment, DEFAULT_SENTIMENT_PARAMS
 from src.preprocessing import PreprocessRouter
 from src.topic_generation import LLMTopic, CATEGORY_DISPLAY
@@ -130,7 +129,7 @@ def run_gpu_pass(
                 try:
                     is_gliner = "gliner" in name.lower()
                     if is_gliner:
-                        ner = GLiNERWrapper(
+                        ner = GLiNERNER(
                             model_name=name,
                             logger=logger,
                             device=gpu_device
@@ -150,7 +149,10 @@ def run_gpu_pass(
                 for r in lang_subset.itertuples(index=False):
                     aid = int(r.id)
                     t0 = time.perf_counter()
-                    ents = ner.predict(r.text_ner)
+                    if is_gliner:
+                        ents = ner.predict(r.text_ner, language=lang)
+                    else:
+                        ents = ner.predict(r.text_ner)
                     _cuda_sync(gpu_device)
                     gpu_time_ner_ms[(aid, mv)] = gpu_time_ner_ms.get((aid, mv), 0) + int(
                         (time.perf_counter() - t0) * 1000

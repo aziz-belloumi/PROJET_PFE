@@ -231,6 +231,28 @@ def main():
             gliner_df.to_csv(gliner_csv_path, index=False, encoding="utf-8-sig")
             logger.info(f"GLiNER results saved to {gliner_csv_path}")
 
+        # Export Sentiment results locally
+        if sent_results_buffer:
+            import pandas as pd
+            # Map sentiment results back to their preprocessed text
+            sentiment_data = []
+            for r in work_df.itertuples(index=False):
+                aid = int(r.id)
+                res = sent_results_buffer.get((aid, 0))
+                if res:
+                    sentiment_data.append({
+                        "article_id": aid,
+                        "preprocessed_text": r.text_sentiment,
+                        "sentiment_label": res["label"],
+                        "sentiment_score": res["score"]
+                    })
+            
+            if sentiment_data:
+                sentiment_df = pd.DataFrame(sentiment_data)
+                sentiment_csv_path = run_dir / "sentiment_results.csv"
+                sentiment_df.to_csv(sentiment_csv_path, index=False, encoding="utf-8-sig")
+                logger.info(f"Sentiment results saved to {sentiment_csv_path}")
+
     # ================================================================
     # STAGE 5 — Analytics Reports
     # ================================================================

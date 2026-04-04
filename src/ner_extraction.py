@@ -7,6 +7,7 @@ import logging
 
 import torch
 from transformers import AutoTokenizer, AutoModelForTokenClassification, pipeline
+from gliner import GLiNER
 
 
 class ModelLoadError(Exception):
@@ -161,6 +162,15 @@ LABEL_UNIFICATION = {
     "CHAMPIONSHIP": "COM",
     "B-COMPETITION": "COM",
     "I-COMPETITION": "COM",
+
+    # GLiNER labels mapping
+    "PERSON NAME": "PER",
+    "ORGANIZATION OR INSTITUTION OR GOVERNMENT BODY": "ORG",
+    "GEOGRAPHIC LOCATION OR CITY OR COUNTRY": "LOC",
+    "DATE OR TIME EXPRESSION": "DAT",
+    "NAMED EVENT OR ARMED CONFLICT OR POLITICAL CRISIS": "EVE",
+    "COMMERCIAL PRODUCT OR BRAND NAME": "PRO",
+    "SPORTS COMPETITION OR LEAGUE OR TOURNAMENT": "COM",
 }
 
 
@@ -456,3 +466,111 @@ class TransformersNER:
             entities = self._merge_adjacent(entities, base_text=text)
 
         return sorted(entities, key=lambda e: (e.start, e.end, e.label))
+
+
+class GLiNERNER:
+    """
+    GLiNER-based NER implementation that follows the same interface as TransformersNER.
+    """
+
+    DEFAULT_LABELS = [
+        "person name",
+        "organization or institution or government body",
+        "geographic location or city or country",
+        "date or time expression",
+        "named event or armed conflict or political crisis",
+        "commercial product or brand name",
+        "sports competition or league or tournament",
+    ]
+
+    LANGUAGE_THRESHOLDS = {
+        "ar": 0.6,
+        "en": 0.6,
+        "fr": 0.6,
+    }
+
+    def __init__(
+        self,
+        model_name: str,
+        threshold: float = 0.6,
+        labels: Optional[List[str]] = None,
+        logger: Optional[logging.Logger] = None,
+        device: Optional[int] = None,
+        chunk_size: int = 450,
+        chunk_overlap: int = 100,
+    ):
+        self.logger = logger or logging.getLogger(__name__)
+        self.model_name = model_name
+        self.threshold = threshold
+        self.labels = labels or self.DEFAULT_LABELS.copy()
+        self.chunk_size = chunk_size
+        self.chunk_overlap = chunk_overlap
+
+        if device is None:
+            device = 0 if torch.cuda.is_available() else -1
+        self.device = device
+
+        self.logger.info(f"Loading GLiNER model: {self.model_name} | device={self.device}")
+        try:
+            self.model = GLiNER.from_pretrained(self.model_name)
+            if self.device >= 0:
+                self.model = self.model.to(f"cuda:{self.device}")
+        except Exception as e:
+            self.logger.error(f"Failed to load GLiNER model {self.model_name}: {e}")
+            raise ModelLoadError(f"GLiNER model '{model_name}' could not be loaded: {e}") from e
+
+    def _chunk_text(self, text: str) -> List[str]:
+        words = text.split()
+        if len(words) <= self.chunk_size:
+            return [text]
+
+        chunks = []
+        start = 0
+        while start < len(words):
+            end = start + self.chunk_size
+            chunk = " ".join(words[start:end])
+            chunks.append(chunk)
+            start += self.chunk_size - self.chunk_overlap
+        return chunks
+
+    def predict(self, text: str, language: Optional[str] = None) -> List[NEREntity]:
+        if not text or not text.strip():
+            return []
+
+        effective_threshold = self.LANGUAGE_THRESHOLDS.get(language, self.threshold) if language else self.threshold
+        chunks = self._chunk_text(text)
+
+        all_entities: List[NEREntity] = []
+
+        for idx, chunk in enumerate(chunks):
+            try:
+                raw_entities = self.model.predict_entities(chunk, self.labels, threshold=effective_threshold)
+            except Exception as e:
+                self.logger.error(f"GLiNER prediction failed on chunk {idx + 1}: {e}")
+                continue
+
+            for entity in raw_entities:
+                label_norm = TransformersNER._normalize_label(entity["label"])
+                
+                # Filter out entities that are too short or invalid
+                if not TransformersNER._is_valid_entity_text(entity["text"]):
+                    continue
+
+                all_entities.append(
+                    NEREntity(
+                        text=entity["text"],
+                        label=label_norm,
+                        start=entity["start"],
+                        end=entity["end"],
+                        score=entity["score"],
+                    )
+                )
+
+        # Deduplicate and sort
+        final_best: Dict[Tuple[int, int, str], NEREntity] = {}
+        for e in all_entities:
+            key = (e.start, e.end, e.label)
+            if key not in final_best or e.score > final_best[key].score:
+                final_best[key] = e
+
+        return sorted(final_best.values(), key=lambda e: (e.start, e.end, e.label))
