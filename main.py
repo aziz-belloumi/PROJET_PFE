@@ -253,6 +253,28 @@ def main():
                 sentiment_df.to_csv(sentiment_csv_path, index=False, encoding="utf-8-sig")
                 logger.info(f"Sentiment results saved to {sentiment_csv_path}")
 
+        # Export Topic & Sentiment results locally (Combined)
+        if topic_results_buffer:
+            import pandas as pd
+            ts_data = []
+            for r in work_df.itertuples(index=False):
+                aid = int(r.id)
+                t_res = topic_results_buffer.get((aid, 0))
+                s_res = sent_results_buffer.get((aid, 0))
+                if t_res:
+                    ts_data.append({
+                        "article_id": aid,
+                        "preprocessed_text_topic": r.text_topic,
+                        "topic_label": t_res["label"],
+                        "sentiment_label": s_res.get("label") if s_res else None,
+                    })
+            
+            if ts_data:
+                ts_df = pd.DataFrame(ts_data)
+                ts_csv_path = run_dir / "topic_sentiment_results.csv"
+                ts_df.to_csv(ts_csv_path, index=False, encoding="utf-8-sig")
+                logger.info(f"Topic & Sentiment results saved to {ts_csv_path}")
+
     # ================================================================
     # STAGE 5 — Analytics Reports
     # ================================================================

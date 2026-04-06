@@ -75,7 +75,7 @@ LATIN_SENTIMENT_PARAMS: Dict[str, Any] = {
     "normalize_unicode": True,
     # Keep placeholders @user/http/email (CardiffNLP expects this)
     "standardize_social": True,
-    "handle_hashtags": False,  # keep # for sentiment context
+    "handle_hashtags": True,  # keep # for sentiment context
     "reduce_repetitions": True,
     "normalize_punct": True,
     "clean_twitter": True,
