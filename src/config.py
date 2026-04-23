@@ -9,7 +9,10 @@ from dotenv import load_dotenv
 
 # --- Resolve project root and load .env ---
 PROJECT_ROOT = Path(__file__).resolve().parents[1]  # .../NLP_MENA
-load_dotenv(dotenv_path=PROJECT_ROOT / ".env")
+if (PROJECT_ROOT / ".env.local").exists():
+    load_dotenv(dotenv_path=PROJECT_ROOT / ".env.local")
+else:
+    load_dotenv(dotenv_path=PROJECT_ROOT / ".env")
 
 
 def _getenv(key: str, default=None, cast=None):
