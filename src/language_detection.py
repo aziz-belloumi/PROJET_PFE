@@ -1,10 +1,9 @@
 from __future__ import annotations
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Optional, Tuple
 import logging
 
-import fasttext
+from fast_langdetect import LangDetectConfig, LangDetector
 
 
 @dataclass(frozen=True)
@@ -13,36 +12,25 @@ class LanguageDetection:
     score: float       
     raw_label: str    
 
-# Detects text language with optional preprocessing
+# Detects text language using fast_langdetect (FastText-based)
 class FastTextLanguageDetector:
-
 
     def __init__(
         self,
-        model_path: str | Path,
         logger: Optional[logging.Logger] = None,
         preprocessor=None,  # expects preprocess_for_lang_detect(text) -> str
+        model: str = "auto",  # "lite", "full", or "auto"
     ):
         self.logger = logger or logging.getLogger(__name__)
         self.preprocessor = preprocessor
 
-        self.model_path = self._resolve_path(model_path)
-        if not self.model_path.exists():
-            raise FileNotFoundError(f"fastText model not found: {self.model_path}")
-
-        self.model = fasttext.load_model(str(self.model_path))
-        self.logger.info(f"fastText language detector loaded model: {self.model_path}")
-
-    def _resolve_path(self, p: str | Path) -> Path:
-        p = Path(p)
-        if p.is_absolute():
-            return p
-        project_root = Path(__file__).resolve().parents[1]
-        return (project_root / p).resolve()
-
-    @staticmethod
-    def _normalize_label(raw_label: str) -> str:
-        return raw_label.replace("__label__", "").strip()
+        # Configure fast_langdetect — disable truncation so we control input length
+        config = LangDetectConfig(
+            max_input_length=None,  # No truncation, we handle it ourselves
+        )
+        self._detector = LangDetector(config)
+        self._model = model
+        self.logger.info(f"fast_langdetect language detector initialized (model={model})")
 
     def detect(self, text: str, k: int = 1) -> LanguageDetection:
         
@@ -52,22 +40,27 @@ class FastTextLanguageDetector:
         if self.preprocessor is not None:
             text = self.preprocessor.preprocess_for_lang_detect(text)
 
-        labels, scores = self.model.predict(text, k=k)
-        raw_label = labels[0] if labels else "__label__unk"
-        score = float(scores[0]) if len(scores) > 0 else 0.0
-        lang = self._normalize_label(raw_label)
+        if not text or not text.strip():
+            return LanguageDetection(lang="unk", score=0.0, raw_label="__label__unk")
 
-        # POST-PROCESSING: Sanity check using Arabic Ratio
-        if lang == "ar" and self.preprocessor is not None:
-             # FastText can sometimes be overconfident on mixed text.
-             # Enforce that the text actually contains a significant amount of Arabic.
-             ratio = self.preprocessor.arabic_ratio(text)
-             # If less than 40% is Arabic letters, reject it even if FastText says "ar"
-             if ratio < 0.4:  
-                 self.logger.warning(f"FastText detected 'ar' but arabic_ratio={ratio:.2f} < 0.4. Forcing 'unk'.")
-                 lang = "unk"
-                 score = 0.0  # Reset score
-                 raw_label = "__label__unk"
+        try:
+            # fast_langdetect.detect returns a list of dicts: [{"lang": "fr", "score": 0.99}, ...]
+            results = self._detector.detect(text, model=self._model, k=k)
+            
+            if results:
+                top = results[0]
+                lang = top["lang"]
+                score = float(top["score"])
+                raw_label = f"__label__{lang}"
+            else:
+                lang = "unk"
+                score = 0.0
+                raw_label = "__label__unk"
+        except Exception as e:
+            self.logger.warning(f"fast_langdetect error: {e}")
+            lang = "unk"
+            score = 0.0
+            raw_label = "__label__unk"
 
         return LanguageDetection(lang=lang, score=score, raw_label=raw_label)
 

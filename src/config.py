@@ -71,6 +71,8 @@ class Config:
     # French 
     FR_NER_MODEL = "Jean-Baptiste/camembert-ner"
 
+    # Multilingual NER
+    GLINER_MODEL = "urchade/gliner_multi-v2.1"
 
 
     # ========================================

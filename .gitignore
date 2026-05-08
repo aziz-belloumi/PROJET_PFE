@@ -1,5 +1,7 @@
 # Virtual environment
 .venv/
+.env/
+env/
 
 # IDE
 .idea/
@@ -8,10 +10,11 @@
 # Python cache
 __pycache__/
 *.pyc
+*.pyo
+*.pyd
 
 # Environment variables
 .env
-
 
 # Logs
 *.log
@@ -22,3 +25,11 @@ Thumbs.db
 # Results
 results/*
 !results/.gitkeep
+
+# Data Files (Do not push large CSVs)
+data_seperation/*.csv
+data_seperation/processing_stats.txt
+data/*.csv
+
+# Keep directory structure
+!**/.gitkeep
