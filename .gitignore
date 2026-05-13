@@ -27,7 +27,8 @@ results/*
 !results/.gitkeep
 
 # Data Files (Do not push large CSVs)
-data_seperation/*.csv
+data_seperation/**/*.csv
+data_seperation/**/*.json
 data_seperation/processing_stats.txt
 data/*.csv
 
