@@ -143,7 +143,7 @@ def main():
                         if not article_text.strip():
                             continue
 
-                        print(f"\r[{pc_id.upper()}] {source_type} {current_abs_idx}...", end="", flush=True)
+                        print(f"\r[{PC_ID.upper()}] {source_type} {current_abs_idx}...", end="", flush=True)
                         
                         verdict = call_qwen(article_text)
                         original_region = str(row.get('dialect_region', 'MSA')).upper()
@@ -191,7 +191,7 @@ def main():
         except Exception as e:
             logger.error(f"Critical error processing {source_type}: {e}")
 
-    logger.info(f"Annotation complete for {pc_id}.")
+    logger.info(f"Annotation complete for {PC_ID}.")
 
 if __name__ == "__main__":
     main()
