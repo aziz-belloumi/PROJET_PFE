@@ -7,6 +7,7 @@ import time
 import requests
 from pathlib import Path
 import io
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # Force stdout to UTF-8 for Windows compatibility with Arabic characters
 if sys.stdout.encoding.lower() != 'utf-8':
@@ -20,6 +21,7 @@ sys.path.append(str(PROJECT_ROOT))
 OLLAMA_URL = "http://localhost:11434/api/generate"
 MODEL_NAME = "qwen2.5:7b"
 MAX_RETRIES = 3
+MAX_WORKERS = 6  # Reduced for 7B on 6GB VRAM
 
 DATA_DIR = PROJECT_ROOT / "data_seperation"
 OUTPUT_DIR = DATA_DIR / "check_dialect"
@@ -70,6 +72,26 @@ Classification:"""
             time.sleep(1)
     
     return "ERROR"
+
+def process_row(row, abs_idx, source_type):
+    """Helper to process a single row for the thread pool."""
+    article_text = str(row.get('text', ''))
+    if not article_text.strip():
+        return None
+
+    verdict = call_qwen(article_text)
+    original_region = str(row.get('dialect_region', 'MSA')).upper()
+    is_confused = (verdict != original_region) and (verdict != "ERROR")
+    
+    return {
+        "id": row.get('id', abs_idx),
+        "text_snippet": article_text[:200],
+        "original_source": source_type,
+        "original_region": original_region,
+        "qwen_verdict": verdict,
+        "is_confused": is_confused,
+        "abs_idx": abs_idx
+    }
 
 def main():
     # PC-specific files
@@ -123,7 +145,7 @@ def main():
         
         try:
             skip = progress[source_type]
-            batch_size = 100
+            batch_size = 500
             
             while True:
                 try:
@@ -135,39 +157,37 @@ def main():
                     if 'text' not in df_chunk.columns and 'texte' in df_chunk.columns:
                         df_chunk.rename(columns={'texte': 'text'}, inplace=True)
 
-                    new_rows = []
+                    rows_to_process = []
                     for idx, row in df_chunk.iterrows():
-                        article_text = str(row.get('text', ''))
-                        current_abs_idx = skip + idx
-                        
-                        if not article_text.strip():
-                            continue
+                        rows_to_process.append((row, skip + idx))
 
-                        print(f"\r[{PC_ID.upper()}] {source_type} {current_abs_idx}...", end="", flush=True)
+                    new_rows = []
+                    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+                        future_to_row = {
+                            executor.submit(process_row, row, abs_idx, source_type): abs_idx 
+                            for row, abs_idx in rows_to_process
+                        }
                         
-                        verdict = call_qwen(article_text)
-                        original_region = str(row.get('dialect_region', 'MSA')).upper()
-                        is_confused = (verdict != original_region) and (verdict != "ERROR")
-                        
-                        if is_confused:
-                            logger.info(f"[CONFUSED] ID {row.get('id')} at idx {current_abs_idx} ({original_region} vs Qwen {verdict})")
-                        
-                        new_rows.append({
-                            "id": row.get('id', current_abs_idx),
-                            "text_snippet": article_text[:200],
-                            "original_source": source_type,
-                            "original_region": original_region,
-                            "qwen_verdict": verdict,
-                            "is_confused": is_confused
-                        })
-                        
-                        if len(new_rows) >= 10:
-                            temp_df = pd.DataFrame(new_rows)
-                            results_df = pd.concat([results_df, temp_df], ignore_index=True)
-                            results_df.to_csv(results_file, index=False, encoding='utf-8-sig')
-                            progress[source_type] = current_abs_idx + 1
-                            with open(progress_file, 'w') as f: json.dump(progress, f)
-                            new_rows = []
+                        for future in as_completed(future_to_row):
+                            res = future.result()
+                            if res:
+                                abs_idx = res.pop('abs_idx')
+                                print(f"\r[{PC_ID.upper()}] {source_type} {abs_idx}...", end="", flush=True)
+                                
+                                if res['is_confused']:
+                                    logger.info(f"[CONFUSED] ID {res['id']} at idx {abs_idx} ({res['original_region']} vs Qwen {res['qwen_verdict']})")
+                                
+                                new_rows.append(res)
+                                
+                                # Update progress and save periodically
+                                if len(new_rows) >= 10:
+                                    temp_df = pd.DataFrame(new_rows)
+                                    results_df = pd.concat([results_df, temp_df], ignore_index=True)
+                                    results_df.to_csv(results_file, index=False, encoding='utf-8-sig')
+                                    # Use the latest finished index for progress
+                                    progress[source_type] = max(progress[source_type], abs_idx + 1)
+                                    with open(progress_file, 'w') as f: json.dump(progress, f)
+                                    new_rows = []
 
                     if new_rows:
                         temp_df = pd.DataFrame(new_rows)
