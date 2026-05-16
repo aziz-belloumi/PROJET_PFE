@@ -30,6 +30,9 @@ results/*
 data_seperation/**/*.csv
 data_seperation/**/*.json
 data_seperation/processing_stats.txt
+data_seperation/check_dialect/ensemble_results_pc*.csv
+data_seperation/check_dialect/progress_pc*.json
+data_seperation/arabic_texts_pc*.csv
 data/*.csv
 
 # Keep directory structure

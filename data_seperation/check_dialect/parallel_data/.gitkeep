@@ -1,4 +1,0 @@
-# Ignore large CSVs in this folder
-*.csv
-# Keep the folder in Git
-!.gitkeep

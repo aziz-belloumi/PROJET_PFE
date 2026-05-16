@@ -24,7 +24,7 @@ MIN_CONFIDENCE_THRESHOLD = 0.50
 CHUNK_SIZE               = 100000
 NUM_WORKERS              = max(1, os.cpu_count() - 1)
 SUB_BATCH_SIZE           = 10000
-MAX_ARTICLES_PER_RUN     = 100000  # Set to None for no limit
+MAX_ARTICLES_PER_RUN     = None  # Process everything in the database
 
 # CSV filenames
 CSV_ARABIC     = "arabic_texts.csv"
@@ -35,12 +35,7 @@ CSV_FRENCH     = "french_texts.csv"
 CSV_MIXED      = "mixed_texts.csv"
 CSV_REJECTED   = "rejected_texts.csv"
 
-# Dialect model config
-# IbrahimAmin/marbertv2-arabic-written-dialect-classifier
-# Labels: MSA | EGY | LEV | GLF | MGR
-# Libyan dialect falls under MGR (Maghrebi)
-DIALECT_MODEL = "IbrahimAmin/marbertv2-arabic-written-dialect-classifier"
-DIALECT_BATCH = 32
+# (Dialect classification moved to check_dialect/ensemble_annotator.py)
 
 # Headers
 HEADER_ARABIC      = ["id", "text", "arabic_ratio"]
@@ -309,201 +304,7 @@ def flush_results(results: list, writers: dict, counts: dict) -> None:
             counts[item.get("reason", "rej_unsupported_lang")] += 1
 
 
-# ------------------------------------------------------------------
-# Dialect Classification using MARBERTv2
-# ------------------------------------------------------------------
-def classify_arabic_dialects(output_dir: Path, counts: dict):
-    """
-    Reads arabic_texts.csv and splits into MSA vs dialectal using
-    IbrahimAmin/marbertv2-arabic-written-dialect-classifier.
-
-    Labels: MSA | EGY (Egyptian) | LEV (Levantine) | GLF (Gulf) | MGR (Maghrebi)
-    Libyan dialect falls under MGR (Maghrebi).
-
-    MSA articles  -> arabic_msa.csv
-    Dialectal     -> arabic_dialectal.csv  (with dialect region label)
-    """
-    input_path = output_dir / CSV_ARABIC
-    msa_path   = output_dir / CSV_ARABIC_MSA
-    dia_path   = output_dir / CSV_ARABIC_DIA
-
-    if not input_path.exists():
-        print(f"\n[Dialect ID] Skip: {CSV_ARABIC} not found.")
-        return
-
-    # --- Device setup ---
-    device      = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    device_name = (
-        f"GPU ({torch.cuda.get_device_name(0)})"
-        if device.type == "cuda" else "CPU"
-    )
-    print(f"\n[Dialect ID] Loading {DIALECT_MODEL} on {device_name}...")
-
-    # --- Load model ---
-    try:
-        tokenizer = AutoTokenizer.from_pretrained(DIALECT_MODEL)
-        model     = AutoModelForSequenceClassification.from_pretrained(
-            DIALECT_MODEL
-        ).half().to(device)
-        model.eval()
-        print(f"[Dialect ID] Model loaded successfully on {device_name}.")
-        print(f"[Dialect ID] Labels: {list(model.config.id2label.values())}")
-    except Exception as e:
-        print(f"\n[Dialect ID] ERROR: Could not load model {DIALECT_MODEL}.")
-        print(f"Details: {e}")
-        return
-
-    # --- Resume Logic: Load already processed IDs ---
-    processed_ids = set()
-    for path in [msa_path, dia_path]:
-        if path.exists() and path.stat().st_size > 0:
-            with open(path, "r", encoding="utf-8") as f:
-                reader = csv.DictReader(f)
-                for row in reader:
-                    processed_ids.add(row["id"])
-    
-    if processed_ids:
-        print(f"[Dialect ID] Found {len(processed_ids):,} already processed articles. Resuming...")
-
-    # --- Initialize counters ---
-    counts["ar_msa"] = 0
-    counts["ar_dia"] = 0
-    counts["ar_egy"] = 0
-    counts["ar_lev"] = 0
-    counts["ar_glf"] = 0
-    counts["ar_mgr"] = 0
-
-    # --- Open writers in append mode ---
-    msa_exists = msa_path.exists() and msa_path.stat().st_size > 0
-    dia_exists = dia_path.exists() and dia_path.stat().st_size > 0
-
-    with open(msa_path, "a", newline="", encoding="utf-8") as f_msa, \
-         open(dia_path, "a", newline="", encoding="utf-8") as f_dia, \
-         open(input_path, "r", encoding="utf-8") as f_in:
-
-        reader     = csv.DictReader(f_in)
-        writer_msa = csv.writer(f_msa)
-        writer_dia = csv.writer(f_dia)
-
-        if not msa_exists:
-            writer_msa.writerow(HEADER_ARABIC_DIAL)
-        if not dia_exists:
-            writer_dia.writerow(HEADER_ARABIC_DIAL)
-
-        buffer_rows = []
-        row_count   = 0
-        batch_count = 0
-
-        def process_buffer(rows: list):
-            nonlocal batch_count
-            texts  = [r["text"] for r in rows]
-            inputs = tokenizer(
-                texts,
-                return_tensors="pt",
-                padding=True,
-                truncation=True,
-                max_length=512,
-            ).to(device)
-
-            with torch.no_grad():
-                with torch.amp.autocast(device_type=device.type):
-                    try:
-                        logits = model(**inputs).logits
-                    except torch.cuda.OutOfMemoryError:
-                        torch.cuda.empty_cache()
-                        half = len(rows) // 2
-                        process_buffer(rows[:half])
-                        process_buffer(rows[half:])
-                        return
-
-            preds = torch.argmax(logits, dim=-1).tolist()
-
-            for row, pred_id in zip(rows, preds):
-                region = model.config.id2label[pred_id]  # MSA/EGY/LEV/GLF/MGR
-                # Note: Model labels might vary, mapping to consistent keys
-                # Labels: ['MAGHREB', 'LEV', 'MSA', 'GLF', 'EGY']
-                
-                label_map = {
-                    "MSA": "msa",
-                    "MAGHREB": "dialect",
-                    "LEV": "dialect",
-                    "GLF": "dialect",
-                    "EGY": "dialect"
-                }
-                
-                region_map = {
-                    "MAGHREB": "MGR",
-                    "LEV": "LEV",
-                    "GLF": "GLF",
-                    "EGY": "EGY",
-                    "MSA": "MSA"
-                }
-
-                region_code = region_map.get(region, region)
-                label       = label_map.get(region, "dialect")
-
-                if label == "msa":
-                    writer_msa.writerow([
-                        row["id"], row["text"], row["arabic_ratio"],
-                        label, region_code
-                    ])
-                    counts["ar_msa"] += 1
-                else:
-                    writer_dia.writerow([
-                        row["id"], row["text"], row["arabic_ratio"],
-                        label, region_code
-                    ])
-                    counts["ar_dia"] += 1
-                    # Track dialect region breakdown
-                    region_key = f"ar_{region_code.lower()}"
-                    if region_key in counts:
-                        counts[region_key] += 1
-            
-            batch_count += 1
-            if batch_count % 500 == 0:
-                torch.cuda.empty_cache()
-
-        print(f"[Dialect ID] Classifying articles (batch={DIALECT_BATCH})...")
-
-        newly_processed_in_run = 0
-        for row in reader:
-            if row["id"] in processed_ids:
-                continue
-
-            buffer_rows.append(row)
-            row_count += 1
-            newly_processed_in_run += 1
-
-            if len(buffer_rows) >= DIALECT_BATCH:
-                process_buffer(buffer_rows)
-                buffer_rows = []
-
-            if MAX_ARTICLES_PER_RUN and newly_processed_in_run >= MAX_ARTICLES_PER_RUN:
-                print(f"[Dialect ID] Reached run limit of {MAX_ARTICLES_PER_RUN}. Stopping...")
-                break
-
-            if row_count % 5000 == 0:
-                print(
-                    f"  Processed {row_count:,} new Arabic articles "
-                    f"(MSA={counts['ar_msa']:,} | "
-                    f"EGY={counts['ar_egy']:,} | "
-                    f"LEV={counts['ar_lev']:,} | "
-                    f"GLF={counts['ar_glf']:,} | "
-                    f"MGR={counts['ar_mgr']:,})..."
-                )
-
-        # Final flush
-        if buffer_rows:
-            process_buffer(buffer_rows)
-
-    print(f"\n[Dialect ID] Done!")
-    print(f"  -> MSA             : {counts['ar_msa']:,}")
-    print(f"  -> Dialectal total : {counts['ar_dia']:,}")
-    print(f"       EGY (Egyptian)  : {counts['ar_egy']:,}")
-    print(f"       LEV (Levantine) : {counts['ar_lev']:,}")
-    print(f"       GLF (Gulf)      : {counts['ar_glf']:,}")
-    print(f"       MGR (Maghrebi)  : {counts['ar_mgr']:,}  <- Libyan dialect")
-
+# (Dialect classification moved to check_dialect/ensemble_annotator.py)
 
 # ------------------------------------------------------------------
 # Stats helper
@@ -539,12 +340,6 @@ def save_stats(counts: dict, chunk_index, output_dir: Path) -> None:
         f"    Arabic  (>= {ARABIC_RATIO_THRESHOLD*100:.0f}% AR chars) : {pct(counts['ar'])}",
         f"      -> Total words                 : {counts.get('ar_words', 0):,}",
         f"      -> Avg words/article           : {counts.get('ar_words', 0) / max(1, counts['ar']):.1f}",
-        f"      -> MSA (Standard)              : {pct2(counts.get('ar_msa', 0), ar)}",
-        f"      -> Dialectal total             : {pct2(counts.get('ar_dia', 0), ar)}",
-        f"           EGY (Egyptian)            : {pct2(counts.get('ar_egy', 0), ar)}",
-        f"           LEV (Levantine)           : {pct2(counts.get('ar_lev', 0), ar)}",
-        f"           GLF (Gulf)               : {pct2(counts.get('ar_glf', 0), ar)}",
-        f"           MGR (Maghrebi/Libyan)     : {pct2(counts.get('ar_mgr', 0), ar)}",
         f"    English                          : {pct(counts['en'])}",
         f"      -> Total words                 : {counts.get('en_words', 0):,}",
         f"      -> Avg words/article           : {counts.get('en_words', 0) / max(1, counts['en']):.1f}",
@@ -571,8 +366,6 @@ def save_stats(counts: dict, chunk_index, output_dir: Path) -> None:
         "  FILE SUMMARY (Article Counts)",
         sep2,
         f"  {CSV_ARABIC:<25} : {counts.get('ar', 0):>10,}",
-        f"  {CSV_ARABIC_MSA:<25} : {counts.get('ar_msa', 0):>10,}",
-        f"  {CSV_ARABIC_DIA:<25} : {counts.get('ar_dia', 0):>10,}",
         f"  {CSV_ENGLISH:<25} : {counts.get('en', 0):>10,}",
         f"  {CSV_FRENCH:<25} : {counts.get('fr', 0):>10,}",
         f"  {CSV_MIXED:<25} : {counts.get('mixed', 0):>10,}",
@@ -588,10 +381,40 @@ def save_stats(counts: dict, chunk_index, output_dir: Path) -> None:
         f.write(report + "\n")
     print(f"\n  Stats saved to: {stats_path}")
 
+def split_arabic_data_for_pcs(output_dir: Path):
+    """Splits arabic_texts.csv into 3 parts for parallel processing."""
+    ar_path = output_dir / CSV_ARABIC
+    if not ar_path.exists():
+        print(f"\n[Splitter] Error: {CSV_ARABIC} not found for splitting.")
+        return
+
+    print(f"\n[Splitter] Splitting {CSV_ARABIC} into 3 parts...")
+    df = pd.read_csv(ar_path)
+    total_rows = len(df)
+    
+    # Calculate chunk sizes
+    size = total_rows // 3
+    
+    # Split
+    df_pc1 = df.iloc[:size]
+    df_pc2 = df.iloc[size:size*2]
+    df_pc3 = df.iloc[size*2:]
+    
+    # Save
+    df_pc1.to_csv(output_dir / "arabic_texts_pc1.csv", index=False)
+    df_pc2.to_csv(output_dir / "arabic_texts_pc2.csv", index=False)
+    df_pc3.to_csv(output_dir / "arabic_texts_pc3.csv", index=False)
+    
+    print(f"  -> PC1: {len(df_pc1):,} articles")
+    print(f"  -> PC2: {len(df_pc2):,} articles")
+    print(f"  -> PC3: {len(df_pc3):,} articles")
+    print("[Splitter] Done. You can now distribute these files to each PC.")
 
 # ------------------------------------------------------------------
 # Main
 # ------------------------------------------------------------------
+import pandas as pd # Import needed for splitting
+
 def main():
     # Setup DB
     try:
@@ -600,19 +423,45 @@ def main():
         print(f"Failed to connect to database: {e}")
         return
 
+    # Pre-download language model to avoid race conditions in parallel workers
+    print("\n[!] Pre-warming language detector...")
+    import tempfile
+    temp_dir = Path(tempfile.gettempdir()) / "fasttext-langdetect"
+    model_path = temp_dir / "lid.176.bin"
+    
+    if model_path.exists():
+        try:
+            # FastText lid.176 is ~126MB. Anything drastically different is corrupted.
+            if abs(model_path.stat().st_size - 131272845) > 1024 * 1024: 
+                print(f"[!] Corrupted model detected ({model_path.stat().st_size} bytes). Deleting...")
+                model_path.unlink()
+        except:
+            pass
+
+    try:
+        from src.language_detection import FastTextLanguageDetector
+        dummy_detector = FastTextLanguageDetector(model="auto")
+        dummy_detector.detect("test")
+        print("[!] Language model ready.")
+    except Exception as e:
+        print(f"[!] Warning during pre-warm: {e}")
+        # If it fails even now, delete and try one last time
+        if "vector too long" in str(e) and model_path.exists():
+            print("[!] Critical corruption. Forcing delete...")
+            model_path.unlink(missing_ok=True)
+            # Re-try once
+            dummy_detector = FastTextLanguageDetector(model="auto")
+            dummy_detector.detect("test")
+
     output_dir = Path(__file__).resolve().parent
 
     counts = {
-        "ar": 0, "ar_msa": 0, "ar_dia": 0,
-        "ar_egy": 0, "ar_lev": 0, "ar_glf": 0, "ar_mgr": 0,
-        "en": 0, "fr": 0, "mixed": 0,
+        "ar": 0, "en": 0, "fr": 0, "mixed": 0,
         "rejected": 0,
         "rej_too_short": 0, "rej_low_confidence": 0,
         "rej_low_quality": 0, "rej_unsupported_lang": 0,
         "total": 0,
     }
-
-    ar_csv_path = output_dir / CSV_ARABIC
 
     # --- Resume Logic: Find current offset ---
     current_total_processed = get_total_processed_count(output_dir)
@@ -620,8 +469,7 @@ def main():
         print(f"\n[!] Detected {current_total_processed:,} articles already separated. Resuming from offset...")
     else:
         # If starting fresh, delete existing small/empty files
-        for fname in [CSV_ARABIC, CSV_ARABIC_MSA, CSV_ARABIC_DIA,
-                      CSV_ENGLISH, CSV_FRENCH, CSV_MIXED, CSV_REJECTED]:
+        for fname in [CSV_ARABIC, CSV_ENGLISH, CSV_FRENCH, CSV_MIXED, CSV_REJECTED]:
             fpath = output_dir / fname
             if fpath.exists():
                 fpath.unlink()
@@ -634,113 +482,72 @@ def main():
     chunk_index = 0
     articles_processed_this_run = 0
 
-    if True:  # Always enter separation phase to check for more data
-        fh_ar, wr_ar = open_csv_writer(output_dir / CSV_ARABIC,   HEADER_ARABIC)
-        fh_en, wr_en = open_csv_writer(output_dir / CSV_ENGLISH,  HEADER_LATIN)
-        fh_fr, wr_fr = open_csv_writer(output_dir / CSV_FRENCH,   HEADER_LATIN)
-        fh_mx, wr_mx = open_csv_writer(output_dir / CSV_MIXED,    HEADER_MIXED)
-        fh_rj, wr_rj = open_csv_writer(output_dir / CSV_REJECTED, HEADER_REJECTED)
+    fh_ar, wr_ar = open_csv_writer(output_dir / CSV_ARABIC,   HEADER_ARABIC)
+    fh_en, wr_en = open_csv_writer(output_dir / CSV_ENGLISH,  HEADER_LATIN)
+    fh_fr, wr_fr = open_csv_writer(output_dir / CSV_FRENCH,   HEADER_LATIN)
+    fh_mx, wr_mx = open_csv_writer(output_dir / CSV_MIXED,    HEADER_MIXED)
+    fh_rj, wr_rj = open_csv_writer(output_dir / CSV_REJECTED, HEADER_REJECTED)
 
-        writers = {
-            "ar":       wr_ar,
-            "en":       wr_en,
-            "fr":       wr_fr,
-            "mixed":    wr_mx,
-            "rejected": wr_rj,
-        }
+    writers = {
+        "ar":       wr_ar,
+        "en":       wr_en,
+        "fr":       wr_fr,
+        "mixed":    wr_mx,
+        "rejected": wr_rj,
+    }
 
-        offset = current_total_processed
-        try:
-            with ProcessPoolExecutor(max_workers=NUM_WORKERS) as executor:
-                while True:
-                    # Check run limit
-                    if MAX_ARTICLES_PER_RUN and articles_processed_this_run >= MAX_ARTICLES_PER_RUN:
-                        print(f"\n[!] Reached run limit of {MAX_ARTICLES_PER_RUN} articles. Stopping separation...")
-                        break
+    offset = current_total_processed
+    try:
+        with ProcessPoolExecutor(max_workers=NUM_WORKERS) as executor:
+            while True:
+                if MAX_ARTICLES_PER_RUN and articles_processed_this_run >= MAX_ARTICLES_PER_RUN:
+                    print(f"\n[!] Reached run limit of {MAX_ARTICLES_PER_RUN}. Stopping separation...")
+                    break
 
-                    sql = (
-                        f"SELECT id, body FROM article "
-                        f"WHERE body IS NOT NULL AND body != '' "
-                        f"ORDER BY id ASC LIMIT {CHUNK_SIZE} OFFSET {offset}"
-                    )
-                    result = db.execute_query(sql)
-                    rows = result.fetchall()
+                sql = (
+                    f"SELECT id, body FROM article "
+                    f"WHERE body IS NOT NULL AND body != '' "
+                    f"ORDER BY id ASC LIMIT {CHUNK_SIZE} OFFSET {offset}"
+                )
+                result = db.execute_query(sql)
+                rows = result.fetchall()
 
-                    if not rows:
-                        print("No more articles to process.")
-                        break
+                if not rows:
+                    print("No more articles to process.")
+                    break
 
-                    chunk_index += 1
-                    chunk_start_total    = counts["total"]
-                    chunk_start_rejected = counts["rejected"]
-                    
-                    print(
-                        f"\n[Chunk {chunk_index}] {len(rows)} articles (Offset {offset}) "
-                        f"-> splitting into sub-batches of {SUB_BATCH_SIZE} "
-                        f"across {NUM_WORKERS} workers..."
-                    )
+                chunk_index += 1
+                chunk_start_total    = counts["total"]
+                chunk_start_rejected = counts["rejected"]
+                
+                print(f"\n[Chunk {chunk_index}] {len(rows)} articles (Offset {offset})...")
 
-                    sub_batches = [
-                        rows[i : i + SUB_BATCH_SIZE]
-                        for i in range(0, len(rows), SUB_BATCH_SIZE)
-                    ]
-                    futures = {
-                        executor.submit(process_sub_batch, list(sb)): idx
-                        for idx, sb in enumerate(sub_batches)
-                    }
+                sub_batches = [rows[i : i + SUB_BATCH_SIZE] for i in range(0, len(rows), SUB_BATCH_SIZE)]
+                futures = {executor.submit(process_sub_batch, list(sb)): idx for idx, sb in enumerate(sub_batches)}
 
-                    for future in as_completed(futures):
-                        try:
-                            batch_results = future.result()
-                            flush_results(batch_results, writers, counts)
-                        except Exception as e:
-                            print(f"  [WORKER ERROR] Sub-batch {futures[future]}: {e}")
+                for future in as_completed(futures):
+                    try:
+                        batch_results = future.result()
+                        flush_results(batch_results, writers, counts)
+                    except Exception as e:
+                        print(f"  [WORKER ERROR] {e}")
 
-                    chunk_processed = counts["total"]    - chunk_start_total
-                    chunk_rejected  = counts["rejected"] - chunk_start_rejected
-                    chunk_accepted  = chunk_processed - chunk_rejected
-                    acc_r = chunk_accepted / chunk_processed * 100 if chunk_processed else 0
-                    rej_r = chunk_rejected / chunk_processed * 100 if chunk_processed else 0
+                articles_processed_this_run += len(rows)
+                offset += CHUNK_SIZE
 
-                    print(
-                        f"  └─ Chunk {chunk_index} done | "
-                        f"processed={chunk_processed:,} | "
-                        f"accepted={chunk_accepted:,} ({acc_r:.1f}%) | "
-                        f"rejected={chunk_rejected:,} ({rej_r:.1f}%)"
-                    )
-                    print(
-                        f"       Running totals -> "
-                        f"total={counts['total']:,} | "
-                        f"ar={counts['ar']:,} | en={counts['en']:,} | "
-                        f"fr={counts['fr']:,} | mixed={counts['mixed']:,} | "
-                        f"rejected={counts['rejected']:,}"
-                    )
-                    offset += CHUNK_SIZE
-                    articles_processed_this_run += len(rows)
+    finally:
+        fh_ar.close()
+        fh_en.close()
+        fh_fr.close()
+        fh_mx.close()
+        fh_rj.close()
 
-        finally:
-            fh_ar.close()
-            fh_en.close()
-            fh_fr.close()
-            fh_mx.close()
-            fh_rj.close()
-
-    # --- Dialect Classification Step ---
-    # We ensure we run this if there are Arabic articles to process.
-    # classify_arabic_dialects has its own resume logic.
-    ar_path = output_dir / CSV_ARABIC
-    if ar_path.exists() and ar_path.stat().st_size > 0:
-        classify_arabic_dialects(output_dir, counts)
-
-    # --- Final stats: Recalculate from all files for global view ---
-    print("\n[!] Recalculating comprehensive statistics from all CSV files...")
+    # Final stats
     final_counts = load_comprehensive_stats(output_dir)
+    save_stats(final_counts, chunk_index, output_dir)
 
-    save_stats(
-        final_counts,
-        chunk_index if articles_processed_this_run > 0 else "N/A (Resumed)",
-        output_dir,
-    )
+    # Auto-Split for PCs
+    split_arabic_data_for_pcs(output_dir)
 
 
 if __name__ == "__main__":
