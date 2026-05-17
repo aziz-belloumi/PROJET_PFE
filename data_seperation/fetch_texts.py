@@ -309,7 +309,8 @@ def flush_results(results: list, writers: dict, counts: dict) -> None:
 # ------------------------------------------------------------------
 # Stats helper
 # ------------------------------------------------------------------
-def save_stats(counts: dict, chunk_index, output_dir: Path) -> None:
+def save_processing_report(output_dir: Path) -> None:
+    counts = load_comprehensive_stats(output_dir)
     total    = counts["total"]
     accepted = counts["ar"] + counts["en"] + counts["fr"] + counts["mixed"]
     rejected = counts["rejected"]
@@ -331,7 +332,7 @@ def save_stats(counts: dict, chunk_index, output_dir: Path) -> None:
         sep,
         f"  PROCESSING REPORT",
         f"  Run date     : {run_time}",
-        f"  Chunks       : {chunk_index}   Workers : {NUM_WORKERS}   Sub-batch : {SUB_BATCH_SIZE}",
+        f"  Workers      : {NUM_WORKERS}   Sub-batch : {SUB_BATCH_SIZE}",
         f"  Total        : {total:,} articles",
         sep,
         "",
@@ -381,34 +382,6 @@ def save_stats(counts: dict, chunk_index, output_dir: Path) -> None:
         f.write(report + "\n")
     print(f"\n  Stats saved to: {stats_path}")
 
-def split_arabic_data_for_pcs(output_dir: Path):
-    """Splits arabic_texts.csv into 3 parts for parallel processing."""
-    ar_path = output_dir / CSV_ARABIC
-    if not ar_path.exists():
-        print(f"\n[Splitter] Error: {CSV_ARABIC} not found for splitting.")
-        return
-
-    print(f"\n[Splitter] Splitting {CSV_ARABIC} into 3 parts...")
-    df = pd.read_csv(ar_path)
-    total_rows = len(df)
-    
-    # Calculate chunk sizes
-    size = total_rows // 3
-    
-    # Split
-    df_pc1 = df.iloc[:size]
-    df_pc2 = df.iloc[size:size*2]
-    df_pc3 = df.iloc[size*2:]
-    
-    # Save
-    df_pc1.to_csv(output_dir / "arabic_texts_pc1.csv", index=False)
-    df_pc2.to_csv(output_dir / "arabic_texts_pc2.csv", index=False)
-    df_pc3.to_csv(output_dir / "arabic_texts_pc3.csv", index=False)
-    
-    print(f"  -> PC1: {len(df_pc1):,} articles")
-    print(f"  -> PC2: {len(df_pc2):,} articles")
-    print(f"  -> PC3: {len(df_pc3):,} articles")
-    print("[Splitter] Done. You can now distribute these files to each PC.")
 
 # ------------------------------------------------------------------
 # Main
@@ -543,12 +516,10 @@ def main():
         fh_rj.close()
 
     # Final stats
-    final_counts = load_comprehensive_stats(output_dir)
-    save_stats(final_counts, chunk_index, output_dir)
+    # Save final statistics report
+    save_processing_report(output_dir)
 
-    # Auto-Split for PCs
-    split_arabic_data_for_pcs(output_dir)
-
+    print("\n[✔] Processing complete.")
 
 if __name__ == "__main__":
     main()
