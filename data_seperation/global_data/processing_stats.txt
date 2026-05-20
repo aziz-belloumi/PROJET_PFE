@@ -1,0 +1,43 @@
+============================================================
+  PROCESSING REPORT
+  Run date     : 2026-05-16 03:10:34
+  Workers      : 19   Sub-batch : 10000
+  Total        : 1,709,265 articles
+============================================================
+
+  -- ACCEPTED  1,528,782 / 1,709,265  (89.4%) --
+------------------------------------------------------------
+    Arabic  (>= 80% AR chars) :  1,303,760  ( 76.3%)
+      -> Total words                 : 57,557,763
+      -> Avg words/article           : 44.1
+    English                          :    180,372  ( 10.6%)
+      -> Total words                 : 5,855,389
+      -> Avg words/article           : 32.5
+      -> Avg confidence              : 0.884
+    French                           :        713  (  0.0%)
+      -> Total words                 : 18,293
+      -> Avg words/article           : 25.7
+      -> Avg confidence              : 0.909
+    Mixed   (< 80% AR chars) :     43,937  (  2.6%)
+      -> Total words                 : 931,288
+      -> Avg confidence              : 0.907
+
+  -- REJECTED  180,483 / 1,709,265  (10.6%) --
+------------------------------------------------------------
+    Too short     (<= 2 words)       :    143,630  (  8.4%)
+    Low confidence (< 0.5)          :     18,553  (  1.1%)
+    Low quality   (alpha < 0.65)     :     17,198  (  1.0%)
+    Unsupported language             :      1,102  (  0.1%)
+
+============================================================
+  Output dir : C:\Users\bello\Desktop\PROJET_PFE\data_seperation
+============================================================
+
+  FILE SUMMARY (Article Counts)
+------------------------------------------------------------
+  arabic_texts.csv          :  1,303,760
+  english_texts.csv         :    180,372
+  french_texts.csv          :        713
+  mixed_texts.csv           :     43,937
+  rejected_texts.csv        :    180,483
+============================================================

@@ -24,7 +24,7 @@ from src.ner_extraction import TransformersNER, GLiNERNER
 from src.topic_generation import LLMTopic
 from src.sentiment_analysis import LLMSentiment
 
-CSV_PATH = PROJECT_ROOT / "scripts" / "manual_eval_sample_topic.csv"
+CSV_PATH = PROJECT_ROOT / "scripts" / "manual_eval_global.csv"
 OUTPUT_DIR = PROJECT_ROOT / "scripts" / "ressources"
 REPORT_FILE = OUTPUT_DIR / "resource_usage_report.csv"
 

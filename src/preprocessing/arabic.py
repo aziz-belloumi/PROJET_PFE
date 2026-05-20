@@ -384,7 +384,11 @@ class ArabicPreprocessor:
         text = re.sub(f"[{punct_set}\\s]+$", "", text)
         
         # Deduplicate identical consecutive punctuation marks (even if separated by spaces)
-        text = re.sub(r'([!؟?\.،؛\-_:~\^"])(?:\s*\1)+', r'\1', text)
+        text = re.sub(r'([!؟?。.،؛\-_:~\^"])(?:\s*\1)+', r'\1', text)
+
+        # Ensure internal periods are surrounded by spaces
+        text = re.sub(r'(?<!\s)\.(?=\S)', ' .', text)
+        text = re.sub(r'(?<=\S)\.(?!\s)', '. ', text)
 
         return self.normalize_whitespace(text)
 
@@ -398,7 +402,7 @@ class ArabicPreprocessor:
         text = re.sub(f"(ليبيا)({ar_chars})", r"\1 \2", text)
 
         # 2. Handle other keywords (original behavior: separate any attached letters)
-        other_keywords = ["للبيع", "للإيجار"]
+        other_keywords = ["للبيع", "للإيجار", "طرابلس"]
         other_pattern = "|".join(other_keywords)
 
         text = re.sub(f"({ar_chars})({other_pattern})", r"\1 \2", text)
@@ -538,6 +542,10 @@ class ArabicPreprocessor:
         # 5. Replace equal signs '=' with a point '.'
         # E.g. "وحده ================================القناة" -> "وحده .القناة"
         text = re.sub(r"=+", ".", text)
+
+        # 5b. Ensure internal periods are surrounded by spaces
+        text = re.sub(r'(?<!\s)\.(?=\S)', ' .', text)
+        text = re.sub(r'(?<=\S)\.(?!\s)', '. ', text)
 
         # 5. Quotation marks and CSV compatibility (ALWAYS LAST)
         # To prevent csv.writer from wrapping the text in quotes and doubling internal quotes

@@ -8,7 +8,7 @@ if sys.stdout.encoding.lower() != 'utf-8':
 
 # Path to the CSV file
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-CSV_PATH = PROJECT_ROOT / "scripts" / "manual_eval_sample_topic.csv"
+CSV_PATH = PROJECT_ROOT / "scripts" / "manual_eval_global.csv"
 
 def check_inconsistencies():
     if not CSV_PATH.exists():

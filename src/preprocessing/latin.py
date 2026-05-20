@@ -127,7 +127,9 @@ class LatinPreprocessor:
 
         # Deduplicate identical consecutive punctuation marks (including quotes)
         text = re.sub(r'([!?.@#\$%^&*()\-=_+\[\]{}|\\;:\'\",<>/])(?:\s*\1)+', r'\1', text)
-        
+        # Ensure internal periods are surrounded by spaces
+        text = re.sub(r'(?<!\s)\.(?=\S)', ' .', text)
+        text = re.sub(r'(?<=\S)\.(?!\s)', '. ', text)        
         return text
 
     def reduce_repetition(self, text: str) -> str:

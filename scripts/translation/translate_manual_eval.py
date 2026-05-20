@@ -7,9 +7,9 @@ import os
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 sys.path.append(str(PROJECT_ROOT))
 
-from src.translation import translate_en_to_fr
+from translation import translate_en_to_fr
 
-CSV_PATH = PROJECT_ROOT / "scripts" / "manual_eval_sample_topic.csv"
+CSV_PATH = PROJECT_ROOT / "scripts" / "manual_eval_global.csv"
 
 def main():
     if not CSV_PATH.exists():

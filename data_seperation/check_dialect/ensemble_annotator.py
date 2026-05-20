@@ -19,7 +19,7 @@ os.environ.pop("HUGGING_FACE_HUB_TOKEN", None)
 # ==========================================
 # CONFIGURATION
 # ==========================================
-PC_ID = None  # Set to 1 or 2 to run on a specific partitioned subset. Set to None to process all.
+PC_ID = 1  # Set to 1 or 2 to run on a specific partitioned subset. Set to None to process all.
 
 DATA_DIR      = Path(r"c:\Users\bello\Desktop\PROJET_PFE\data_seperation")
 OUTPUT_DIR    = DATA_DIR / "check_dialect"
@@ -106,6 +106,19 @@ MODELS_CONFIG = [
 VALID_LABELS = {"MSA", "EGY", "LEV", "GLF", "MGR"}
 
 # ==========================================
+# M1 MODEL MAPPING
+# ==========================================
+M1_MAPPING = {
+    "MSA":     "MSA",
+    "EGY":     "EGY",
+    "LEV":     "LEV",
+    "GLF":     "GLF",
+    "MAG":     "MGR",
+    "MGR":     "MGR",
+    "MAGHREB": "MGR",
+}
+
+# ==========================================
 # EVALUATION & STATS
 # ==========================================
 def evaluate_ensemble(item: dict) -> dict:
@@ -188,7 +201,8 @@ def generate_stats():
         for chunk in pd.read_csv(ACCEPTED_FILE, chunksize=50000):
             total_accepted += len(chunk)
             accepted_words += chunk["text"].astype(str).str.split().str.len().sum()
-            for k, v in chunk["final_label"].value_counts().to_dict().items():
+            lbl_col = "final_label" if "final_label" in chunk.columns else "ensemble_label"
+            for k, v in chunk[lbl_col].value_counts().to_dict().items():
                 dialect_dist[k] = dialect_dist.get(k, 0) + v
             for k, v in chunk["agreement_count"].value_counts().to_dict().items():
                 if k in [1, 2, 3, 4, 5]:
@@ -379,6 +393,90 @@ def run_single_model(config, model, tokenizer, batch_records):
 
 
 # ==========================================
+# FIX OTHER LABELS (Post-Processing)
+# ==========================================
+def fix_other_labels(models: dict, tokenizers: dict):
+    """Fix rows where m1_label == 'OTHER' by re-running Ibrahim model"""
+    print("\n" + "="*60)
+    print("  POST-PROCESSING: FIXING M1_LABEL == 'OTHER' ROWS")
+    print("="*60)
+    
+    if not ACCEPTED_FILE.exists():
+        print(f"  Accepted file not found: {ACCEPTED_FILE}")
+        return
+    
+    print(f"\n[1] Loading {ACCEPTED_FILE.name}...")
+    df = pd.read_csv(ACCEPTED_FILE)
+    print(f"    Total rows: {len(df):,}")
+    
+    other_mask = df["m1_label"] == "OTHER"
+    other_count = other_mask.sum()
+    print(f"\n[2] Rows with m1_label == 'OTHER': {other_count:,}")
+    
+    if other_count == 0:
+        print("    Nothing to fix.")
+        return
+    
+    print(f"\n[3] Re-running Ibrahim on {other_count:,} articles (batch={INFERENCE_BATCH_SIZE})...")
+    other_indices = df[other_mask].index.tolist()
+    other_texts = df.loc[other_mask, "text"].tolist()
+    
+    m1_config = MODELS_CONFIG[0]
+    m1_model = models["m1"]
+    m1_tokenizer = tokenizers["m1"]
+    id2label = m1_model.config.id2label
+    
+    new_labels = []
+    new_confs = []
+    
+    for i in tqdm(range(0, len(other_texts), INFERENCE_BATCH_SIZE), desc="Ibrahim re-run"):
+        batch_texts = other_texts[i : i + INFERENCE_BATCH_SIZE]
+        inputs = m1_tokenizer(batch_texts, return_tensors="pt", padding=True,
+                              truncation=True, max_length=512).to(DEVICE)
+        with torch.no_grad():
+            logits = m1_model(**inputs).logits
+        probs = torch.softmax(logits, dim=-1)
+        pred_ids = torch.argmax(probs, dim=-1).tolist()
+        pred_confs = probs.max(dim=-1).values.tolist()
+        for pred_id, pred_conf in zip(pred_ids, pred_confs):
+            raw_label = id2label[pred_id]
+            mapped_label = M1_MAPPING.get(raw_label, "OTHER")
+            new_labels.append(mapped_label)
+            new_confs.append(round(float(pred_conf), 4))
+    
+    print(f"\n[4] Updating m1_label and m1_conf...")
+    for i, idx in enumerate(other_indices):
+        df.at[idx, "m1_label"] = new_labels[i]
+        df.at[idx, "m1_conf"] = new_confs[i]
+    
+    new_label_dist = pd.Series(new_labels).value_counts().to_dict()
+    print(f"    New m1 distribution for previously-OTHER rows:")
+    for lbl, cnt in sorted(new_label_dist.items(), key=lambda x: x[1], reverse=True):
+        print(f"      {lbl:<10}: {cnt:>10,}")
+    
+    print(f"\n[5] Recalculating ensemble verdicts...")
+    for idx in tqdm(other_indices, desc="Verdicts"):
+        row = df.loc[idx].to_dict()
+        verdict = evaluate_ensemble(row)
+        df.at[idx, "agreement_count"] = verdict["agreement_count"]
+        df.at[idx, "average_confidence"] = verdict["average_confidence"]
+        df.at[idx, "final_label"] = verdict["final_label"]
+        df.at[idx, "ensemble_label"] = verdict["final_label"]
+        df.at[idx, "ensemble_status"] = verdict["status"]
+        df.at[idx, "rejection_reason"] = verdict.get("reason", "")
+    
+    print(f"\n[6] Saving corrected {ACCEPTED_FILE.name}...")
+    df.to_csv(ACCEPTED_FILE, index=False)
+    print(f"    Saved {len(df):,} rows.")
+    
+    print(f"\n{'='*60}")
+    print(f"  DONE — FIXED SUMMARY")
+    print(f"{'='*60}")
+    print(f"  Articles fixed : {other_count:,}")
+    print(f"  Remaining OTHER: {(df['m1_label'] == 'OTHER').sum():,}")
+    print(f"{'='*60}\n")
+
+# ==========================================
 # MAIN ENTRYPOINT
 # ==========================================
 def main():
@@ -489,6 +587,7 @@ def main():
                 out_row[f"{m_id}_conf"]  = row[f"{m_id}_conf"]
                 
             out_row["ensemble_label"] = eval_res["final_label"]
+            out_row["final_label"] = eval_res["final_label"]
             out_row["ensemble_status"] = eval_res["status"]
             out_row["rejection_reason"] = eval_res.get("reason", "")
             out_row["agreement_count"] = eval_res["agreement_count"]
@@ -511,6 +610,13 @@ def main():
         
     pbar.close()
 
+    # Free memory (but keep models for post-processing)
+    gc.collect()
+    torch.cuda.empty_cache()
+    
+    # Post-process: Fix rows where m1_label == 'OTHER'
+    fix_other_labels(models, tokenizers)
+    
     # Free memory
     del models
     del tokenizers

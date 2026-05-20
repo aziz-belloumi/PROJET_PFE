@@ -1,4 +1,4 @@
-# comparison/sentiment_comparison.py
+# analysis/sentiment_comparison.py
 """
 Sentiment comparison — reads from articles_enriched (LONG FORMAT).
 

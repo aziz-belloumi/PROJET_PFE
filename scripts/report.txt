@@ -1,0 +1,678 @@
+======================================================================
+      MANUAL ANNOTATION & MODEL STATISTICS
+======================================================================
+Total samples: 600
+Annotated samples: 600 (100.0%)
+Unannotated samples: 0 (0.0%)
+
+--- Language Breakdown ---
+  AR (MSA): 150 (25.0%)
+  AR (Dialectal): 150 (25.0%)
+  AR (Total): 300 (50.0%)
+  EN: 150 (25.0%)
+  FR: 150 (25.0%)
+
+--- Original Pipeline Theme Prediction Accuracy ---
+  [Global]:
+    Correct: 542 (90.3%)
+    Incorrect: 58 (9.7%)
+  [AR (MSA)]:
+    Correct: 143 (95.3%)
+    Incorrect: 7 (4.7%)
+  [AR (Dialectal)]:
+    Correct: 121 (80.7%)
+    Incorrect: 29 (19.3%)
+  [AR (Total)]:
+    Correct: 264 (88.0%)
+    Incorrect: 36 (12.0%)
+  [EN]:
+    Correct: 141 (94.0%)
+    Incorrect: 9 (6.0%)
+  [FR]:
+    Correct: 137 (91.3%)
+    Incorrect: 13 (8.7%)
+
+--- Original Pipeline Sentiment Prediction Accuracy ---
+  [Global]:
+    Correct: 547 (91.2%)
+    Incorrect: 53 (8.8%)
+  [AR (MSA)]:
+    Correct: 144 (96.0%)
+    Incorrect: 6 (4.0%)
+  [AR (Dialectal)]:
+    Correct: 137 (91.3%)
+    Incorrect: 13 (8.7%)
+  [AR (Total)]:
+    Correct: 281 (93.7%)
+    Incorrect: 19 (6.3%)
+  [EN]:
+    Correct: 129 (86.0%)
+    Incorrect: 21 (14.0%)
+  [FR]:
+    Correct: 137 (91.3%)
+    Incorrect: 13 (8.7%)
+
+--- Expected Theme Distribution (Top 5) ---
+  [Global]:
+    السياسة: 65 (10.8%)
+    عام: 56 (9.3%)
+    Conflict: 52 (8.7%)
+    Conflit: 52 (8.7%)
+    الأمن: 49 (8.2%)
+  [AR (MSA)]:
+    السياسة: 49 (32.7%)
+    النزاع: 32 (21.3%)
+    الأمن: 21 (14.0%)
+    الدبلوماسية: 20 (13.3%)
+    عام: 7 (4.7%)
+  [AR (Dialectal)]:
+    عام: 49 (32.7%)
+    الأمن: 28 (18.7%)
+    السياسة: 16 (10.7%)
+    النزاع: 14 (9.3%)
+    الدين: 11 (7.3%)
+  [AR (Total)]:
+    السياسة: 65 (21.7%)
+    عام: 56 (18.7%)
+    الأمن: 49 (16.3%)
+    النزاع: 46 (15.3%)
+    الدبلوماسية: 24 (8.0%)
+  [EN]:
+    Conflict: 52 (34.7%)
+    Politics: 39 (26.0%)
+    Security: 20 (13.3%)
+    Technology: 8 (5.3%)
+    General: 7 (4.7%)
+  [FR]:
+    Conflit: 52 (34.7%)
+    Politique: 37 (24.7%)
+    Sécurité: 19 (12.7%)
+    Général: 11 (7.3%)
+    Économie: 9 (6.0%)
+
+--- Expected Sentiment Distribution ---
+  [Global]:
+    NEUTRAL: 267 (44.5%)
+    NEGATIVE: 246 (41.0%)
+    POSITIVE: 87 (14.5%)
+  [AR (MSA)]:
+    NEUTRAL: 69 (46.0%)
+    NEGATIVE: 62 (41.3%)
+    POSITIVE: 19 (12.7%)
+  [AR (Dialectal)]:
+    NEUTRAL: 70 (46.7%)
+    NEGATIVE: 45 (30.0%)
+    POSITIVE: 35 (23.3%)
+  [AR (Total)]:
+    NEUTRAL: 139 (46.3%)
+    NEGATIVE: 107 (35.7%)
+    POSITIVE: 54 (18.0%)
+  [EN]:
+    NEGATIVE: 70 (46.7%)
+    NEUTRAL: 58 (38.7%)
+    POSITIVE: 22 (14.7%)
+  [FR]:
+    NEUTRAL: 70 (46.7%)
+    NEGATIVE: 69 (46.0%)
+    POSITIVE: 11 (7.3%)
+
+--- Sentiment Models Performance (Accuracy + Precision + Recall + F1) ---
+
+  [AR (MSA)]
+    bert-base-arabic-camelbert-msa-sentiment:
+      Accuracy : 57.3%
+      Precision: 63.2%
+      Recall   : 50.5%
+      F1 Macro : 52.2%
+      Samples  : 150
+    bert-base-arabic-camelbert-da-sentiment:
+      Accuracy : 56.0%
+      Precision: 56.6%
+      Recall   : 47.2%
+      F1 Macro : 48.4%
+      Samples  : 150
+    AraBert-Arabic-Sentiment-Analysis:
+      Accuracy : 50.0%
+      Precision: 58.0%
+      Recall   : 43.2%
+      F1 Macro : 42.7%
+      Samples  : 150
+    bert-base-arabic-camelbert-mix-sentiment:
+      Accuracy : 54.7%
+      Precision: 58.2%
+      Recall   : 45.8%
+      F1 Macro : 45.9%
+      Samples  : 150
+
+  [AR (Dialectal)]
+    bert-base-arabic-camelbert-msa-sentiment:
+      Accuracy : 58.7%
+      Precision: 57.7%
+      Recall   : 59.9%
+      F1 Macro : 58.2%
+      Samples  : 150
+    bert-base-arabic-camelbert-da-sentiment:
+      Accuracy : 61.3%
+      Precision: 61.1%
+      Recall   : 63.0%
+      F1 Macro : 61.6%
+      Samples  : 150
+    AraBert-Arabic-Sentiment-Analysis:
+      Accuracy : 56.0%
+      Precision: 55.4%
+      Recall   : 58.3%
+      F1 Macro : 56.0%
+      Samples  : 150
+    bert-base-arabic-camelbert-mix-sentiment:
+      Accuracy : 64.0%
+      Precision: 63.2%
+      Recall   : 65.4%
+      F1 Macro : 63.9%
+      Samples  : 150
+
+  [AR (Total)]
+    bert-base-arabic-camelbert-msa-sentiment:
+      Accuracy : 58.0%
+      Precision: 57.5%
+      Recall   : 55.3%
+      F1 Macro : 56.1%
+      Samples  : 300
+    bert-base-arabic-camelbert-da-sentiment:
+      Accuracy : 58.7%
+      Precision: 59.0%
+      Recall   : 56.4%
+      F1 Macro : 57.4%
+      Samples  : 300
+    AraBert-Arabic-Sentiment-Analysis:
+      Accuracy : 53.0%
+      Precision: 53.4%
+      Recall   : 50.8%
+      F1 Macro : 51.4%
+      Samples  : 300
+    bert-base-arabic-camelbert-mix-sentiment:
+      Accuracy : 59.3%
+      Precision: 59.9%
+      Recall   : 56.4%
+      F1 Macro : 57.4%
+      Samples  : 300
+
+  [EN]
+    twitter-roberta-base-sentiment-latest:
+      Accuracy : 62.0%
+      Precision: 69.4%
+      Recall   : 57.1%
+      F1 Macro : 59.0%
+      Samples  : 150
+    sentiment-roberta-large-english-3-classes:
+      Accuracy : 49.3%
+      Precision: 64.8%
+      Recall   : 43.4%
+      F1 Macro : 40.7%
+      Samples  : 150
+    bertweet-base-sentiment-analysis:
+      Accuracy : 60.0%
+      Precision: 66.6%
+      Recall   : 56.9%
+      F1 Macro : 57.7%
+      Samples  : 150
+
+  [FR]
+    distilcamembert-base-sentiment:
+      Accuracy : 48.7%
+      Precision: 50.5%
+      Recall   : 55.5%
+      F1 Macro : 42.3%
+      Samples  : 150
+    distilcamembert-base-nli:
+      Accuracy : 46.7%
+      Precision: 15.6%
+      Recall   : 33.3%
+      F1 Macro : 21.2%
+      Samples  : 150
+    bert-base-multilingual-uncased-sentiment:
+      Accuracy : 46.0%
+      Precision: 42.0%
+      Recall   : 48.6%
+      F1 Macro : 36.2%
+      Samples  : 150
+
+  [MULTI]
+    twitter-xlm-roberta-base-sentiment:
+      Accuracy : 58.2%
+      Precision: 53.3%
+      Recall   : 54.8%
+      F1 Macro : 53.7%
+      Samples  : 600
+    distilbert-base-multilingual-cased-sentiments-student:
+      Accuracy : 42.5%
+      Precision: 54.2%
+      Recall   : 47.6%
+      F1 Macro : 34.1%
+      Samples  : 600
+
+--- Topic Models Performance (Accuracy + Precision + Recall + F1) ---
+
+  [AR (MSA)]
+    mDeBERTa-v3-base-xnli-multilingual-nli-2mil7:
+      Accuracy : 44.7%
+      Precision: 33.7%
+      Recall   : 29.0%
+      F1 Macro : 26.2%
+      Samples  : 150
+    mDeBERTa-v3-base-mnli-xnli:
+      Accuracy : 44.0%
+      Precision: 36.7%
+      Recall   : 41.5%
+      F1 Macro : 35.2%
+      Samples  : 150
+    xlm-roberta-large-xnli:
+      Accuracy : 28.0%
+      Precision: 25.4%
+      Recall   : 27.9%
+      F1 Macro : 21.3%
+      Samples  : 150
+
+  [AR (Dialectal)]
+    mDeBERTa-v3-base-xnli-multilingual-nli-2mil7:
+      Accuracy : 26.7%
+      Precision: 18.6%
+      Recall   : 30.3%
+      F1 Macro : 18.9%
+      Samples  : 150
+    mDeBERTa-v3-base-mnli-xnli:
+      Accuracy : 26.7%
+      Precision: 27.2%
+      Recall   : 33.0%
+      F1 Macro : 23.4%
+      Samples  : 150
+    xlm-roberta-large-xnli:
+      Accuracy : 28.7%
+      Precision: 37.5%
+      Recall   : 43.9%
+      F1 Macro : 35.0%
+      Samples  : 150
+
+  [AR (Total)]
+    mDeBERTa-v3-base-xnli-multilingual-nli-2mil7:
+      Accuracy : 35.7%
+      Precision: 27.0%
+      Recall   : 35.8%
+      F1 Macro : 25.2%
+      Samples  : 300
+    mDeBERTa-v3-base-mnli-xnli:
+      Accuracy : 35.3%
+      Precision: 29.2%
+      Recall   : 40.1%
+      F1 Macro : 28.4%
+      Samples  : 300
+    xlm-roberta-large-xnli:
+      Accuracy : 28.3%
+      Precision: 33.0%
+      Recall   : 44.3%
+      F1 Macro : 30.9%
+      Samples  : 300
+
+  [EN]
+    DeBERTa-v3-large-mnli-fever-anli-ling-wanli:
+      Accuracy : 51.3%
+      Precision: 44.8%
+      Recall   : 40.4%
+      F1 Macro : 38.5%
+      Samples  : 150
+    roberta-large-mnli:
+      Accuracy : 36.0%
+      Precision: 19.1%
+      Recall   : 17.6%
+      F1 Macro : 17.4%
+      Samples  : 150
+    bart-large-mnli:
+      Accuracy : 48.7%
+      Precision: 56.9%
+      Recall   : 49.7%
+      F1 Macro : 45.2%
+      Samples  : 150
+    mDeBERTa-v3-base-xnli-multilingual-nli-2mil7:
+      Accuracy : 48.7%
+      Precision: 26.7%
+      Recall   : 33.8%
+      F1 Macro : 24.8%
+      Samples  : 150
+    mDeBERTa-v3-base-mnli-xnli:
+      Accuracy : 44.7%
+      Precision: 24.5%
+      Recall   : 24.9%
+      F1 Macro : 20.8%
+      Samples  : 150
+    xlm-roberta-large-xnli:
+      Accuracy : 32.7%
+      Precision: 20.5%
+      Recall   : 20.9%
+      F1 Macro : 18.7%
+      Samples  : 150
+    nli-deberta-v3-large:
+      Accuracy : 52.7%
+      Precision: 35.5%
+      Recall   : 34.9%
+      F1 Macro : 34.4%
+      Samples  : 150
+
+  [FR]
+    mDeBERTa-v3-base-xnli-multilingual-nli-2mil7:
+      Accuracy : 24.0%
+      Precision: 20.0%
+      Recall   : 26.4%
+      F1 Macro : 18.3%
+      Samples  : 150
+    mDeBERTa-v3-base-mnli-xnli:
+      Accuracy : 36.7%
+      Precision: 21.0%
+      Recall   : 24.8%
+      F1 Macro : 20.8%
+      Samples  : 150
+    xlm-roberta-large-xnli:
+      Accuracy : 28.0%
+      Precision: 16.1%
+      Recall   : 20.2%
+      F1 Macro : 16.1%
+      Samples  : 150
+    french_xlm_xnli:
+      Accuracy : 32.0%
+      Precision: 11.4%
+      Recall   : 11.6%
+      F1 Macro : 10.1%
+      Samples  : 150
+    distilcamembert-base-nli:
+      Accuracy : 35.3%
+      Precision: 17.8%
+      Recall   : 14.9%
+      F1 Macro : 13.1%
+      Samples  : 150
+
+--- New NER Models Statistics ---
+  arabic-ner:
+    [AR (MSA)]:
+      - Extracted entities from 142/150 texts (94.7%)
+      - Total entities extracted: 842
+      - Average entities per text: 5.61
+    [AR (Dialectal)]:
+      - Extracted entities from 98/150 texts (65.3%)
+      - Total entities extracted: 532
+      - Average entities per text: 3.55
+    [AR (Total)]:
+      - Extracted entities from 240/300 texts (80.0%)
+      - Total entities extracted: 1374
+      - Average entities per text: 4.58
+  bert-base-arabic-camelbert-msa-ner:
+    [AR (MSA)]:
+      - Extracted entities from 130/150 texts (86.7%)
+      - Total entities extracted: 672
+      - Average entities per text: 4.48
+    [AR (Dialectal)]:
+      - Extracted entities from 101/150 texts (67.3%)
+      - Total entities extracted: 444
+      - Average entities per text: 2.96
+    [AR (Total)]:
+      - Extracted entities from 231/300 texts (77.0%)
+      - Total entities extracted: 1116
+      - Average entities per text: 3.72
+  bert-base-NER:
+    [EN]:
+      - Extracted entities from 139/150 texts (92.7%)
+      - Total entities extracted: 494
+      - Average entities per text: 3.29
+  camembert-ner:
+    [FR]:
+      - Extracted entities from 121/150 texts (80.7%)
+      - Total entities extracted: 279
+      - Average entities per text: 1.86
+  gliner_multi-v2.1:
+    [AR (MSA)]:
+      - Extracted entities from 150/150 texts (100.0%)
+      - Total entities extracted: 336
+      - Average entities per text: 2.24
+    [AR (Dialectal)]:
+      - Extracted entities from 88/150 texts (58.7%)
+      - Total entities extracted: 274
+      - Average entities per text: 1.83
+    [AR (Total)]:
+      - Extracted entities from 238/300 texts (79.3%)
+      - Total entities extracted: 610
+      - Average entities per text: 2.03
+    [EN]:
+      - Extracted entities from 145/150 texts (96.7%)
+      - Total entities extracted: 333
+      - Average entities per text: 2.22
+    [FR]:
+      - Extracted entities from 130/150 texts (86.7%)
+      - Total entities extracted: 279
+      - Average entities per text: 1.86
+  bert-base-arabic-camelbert-mix-ner:
+    [AR (MSA)]:
+      - Extracted entities from 132/150 texts (88.0%)
+      - Total entities extracted: 677
+      - Average entities per text: 4.51
+    [AR (Dialectal)]:
+      - Extracted entities from 101/150 texts (67.3%)
+      - Total entities extracted: 454
+      - Average entities per text: 3.03
+    [AR (Total)]:
+      - Extracted entities from 233/300 texts (77.7%)
+      - Total entities extracted: 1131
+      - Average entities per text: 3.77
+  bert-large-NER:
+    [EN]:
+      - Extracted entities from 137/150 texts (91.3%)
+      - Total entities extracted: 501
+      - Average entities per text: 3.34
+  roberta-large-ner-english:
+    [EN]:
+      - Extracted entities from 138/150 texts (92.0%)
+      - Total entities extracted: 440
+      - Average entities per text: 2.93
+  distilcamembert-base-ner:
+    [EN]: N/A (no predictions)
+  bert-base-multilingual-cased-ner-hrl:
+    [AR (MSA)]:
+      - Extracted entities from 125/150 texts (83.3%)
+      - Total entities extracted: 652
+      - Average entities per text: 4.35
+    [AR (Dialectal)]:
+      - Extracted entities from 82/150 texts (54.7%)
+      - Total entities extracted: 370
+      - Average entities per text: 2.47
+    [AR (Total)]:
+      - Extracted entities from 207/300 texts (69.0%)
+      - Total entities extracted: 1022
+      - Average entities per text: 3.41
+    [EN]:
+      - Extracted entities from 123/150 texts (82.0%)
+      - Total entities extracted: 406
+      - Average entities per text: 2.71
+    [FR]:
+      - Extracted entities from 122/150 texts (81.3%)
+      - Total entities extracted: 337
+      - Average entities per text: 2.25
+  wikineural-multilingual-ner:
+    [AR (MSA)]:
+      - Extracted entities from 139/150 texts (92.7%)
+      - Total entities extracted: 582
+      - Average entities per text: 3.88
+    [AR (Dialectal)]:
+      - Extracted entities from 100/150 texts (66.7%)
+      - Total entities extracted: 287
+      - Average entities per text: 1.91
+    [AR (Total)]:
+      - Extracted entities from 239/300 texts (79.7%)
+      - Total entities extracted: 869
+      - Average entities per text: 2.90
+    [EN]:
+      - Extracted entities from 136/150 texts (90.7%)
+      - Total entities extracted: 441
+      - Average entities per text: 2.94
+    [FR]:
+      - Extracted entities from 133/150 texts (88.7%)
+      - Total entities extracted: 309
+      - Average entities per text: 2.06
+  AraBert-Arabic-NER-CoNLLpp:
+    [AR (MSA)]:
+      - Extracted entities from 139/150 texts (92.7%)
+      - Total entities extracted: 533
+      - Average entities per text: 3.55
+    [AR (Dialectal)]:
+      - Extracted entities from 119/150 texts (79.3%)
+      - Total entities extracted: 471
+      - Average entities per text: 3.14
+    [AR (Total)]:
+      - Extracted entities from 258/300 texts (86.0%)
+      - Total entities extracted: 1004
+      - Average entities per text: 3.35
+
+--- NER Model Comparison (GLiNER vs Language-Specific) ---
+
+  Language: AR (MSA) (150 texts)
+    - GLiNER: 336 entities (Avg: 2.24)
+    - arabic-ner: 842 entities (Avg: 5.61)
+    - bert-base-arabic-camelbert-msa-ner: 672 entities (Avg: 4.48)
+    - bert-base-arabic-camelbert-mix-ner: 677 entities (Avg: 4.51)
+    - bert-base-multilingual-cased-ner-hrl: 652 entities (Avg: 4.35)
+    - wikineural-multilingual-ner: 582 entities (Avg: 3.88)
+    - AraBert-Arabic-NER-CoNLLpp: 533 entities (Avg: 3.55)
+
+  Language: AR (Dialectal) (150 texts)
+    - GLiNER: 274 entities (Avg: 1.83)
+    - arabic-ner: 532 entities (Avg: 3.55)
+    - bert-base-arabic-camelbert-msa-ner: 444 entities (Avg: 2.96)
+    - bert-base-arabic-camelbert-mix-ner: 454 entities (Avg: 3.03)
+    - bert-base-multilingual-cased-ner-hrl: 370 entities (Avg: 2.47)
+    - wikineural-multilingual-ner: 287 entities (Avg: 1.91)
+    - AraBert-Arabic-NER-CoNLLpp: 471 entities (Avg: 3.14)
+
+  Language: AR (Total) (300 texts)
+    - GLiNER: 610 entities (Avg: 2.03)
+    - arabic-ner: 1374 entities (Avg: 4.58)
+    - bert-base-arabic-camelbert-msa-ner: 1116 entities (Avg: 3.72)
+    - bert-base-arabic-camelbert-mix-ner: 1131 entities (Avg: 3.77)
+    - bert-base-multilingual-cased-ner-hrl: 1022 entities (Avg: 3.41)
+    - wikineural-multilingual-ner: 869 entities (Avg: 2.90)
+    - AraBert-Arabic-NER-CoNLLpp: 1004 entities (Avg: 3.35)
+
+  Language: EN (150 texts)
+    - GLiNER: 333 entities (Avg: 2.22)
+    - bert-base-NER: 494 entities (Avg: 3.29)
+    - bert-large-NER: 501 entities (Avg: 3.34)
+    - roberta-large-ner-english: 440 entities (Avg: 2.93)
+    - bert-base-multilingual-cased-ner-hrl: 406 entities (Avg: 2.71)
+    - wikineural-multilingual-ner: 441 entities (Avg: 2.94)
+
+  Language: FR (150 texts)
+    - GLiNER: 279 entities (Avg: 1.86)
+    - camembert-ner: 279 entities (Avg: 1.86)
+    - bert-base-multilingual-cased-ner-hrl: 337 entities (Avg: 2.25)
+    - wikineural-multilingual-ner: 309 entities (Avg: 2.06)
+
+======================================================================
+      RESOURCE USAGE & TIMING BENCHMARKS
+======================================================================
+
+--- CPU Execution Performance & Memory Footprint ---
+
+  [TOPIC Models]
+    Model                                            | Lang | Load Time  | Avg/Doc    | Peak CPU   | Peak GPU  
+    -------------------------------------------------+------+------------+------------+------------+-----------
+    Qwen-LLM                                         | AR   | 0.00s      | 5570.3ms   | 1.9MB      | 0.0MB     
+    Qwen-LLM                                         | EN   | 0.00s      | 4769.1ms   | 0.2MB      | 0.0MB     
+    Qwen-LLM                                         | FR   | 0.00s      | 5377.0ms   | 0.0MB      | 0.0MB     
+    DeBERTa-v3-large-mnli-fever-anli-ling-wanli      | EN   | 6.09s      | 21982.9ms  | 1917.6MB   | 0.0MB     
+    bart-large-mnli                                  | EN   | 3.76s      | 12516.5ms  | 0.0MB      | 0.0MB     
+    french_xlm_xnli                                  | FR   | 7.37s      | 4651.7ms   | 527.4MB    | 0.0MB     
+    mDeBERTa-v3-base-xnli-multilingual-nli-2mil7     | AR   | 5.67s      | 10087.7ms  | 1308.3MB   | 0.0MB     
+    mDeBERTa-v3-base-xnli-multilingual-nli-2mil7     | EN   | 5.84s      | 9287.8ms   | 164.1MB    | 0.0MB     
+    mDeBERTa-v3-base-xnli-multilingual-nli-2mil7     | FR   | 6.02s      | 9634.3ms   | 184.2MB    | 0.0MB     
+
+  [SENTIMENT Models]
+    Model                                            | Lang | Load Time  | Avg/Doc    | Peak CPU   | Peak GPU  
+    -------------------------------------------------+------+------------+------------+------------+-----------
+    Qwen-LLM                                         | AR   | 0.00s      | 5617.7ms   | 0.0MB      | 0.0MB     
+    Qwen-LLM                                         | EN   | 0.00s      | 4761.7ms   | 0.0MB      | 0.0MB     
+    Qwen-LLM                                         | FR   | 0.00s      | 5329.9ms   | 0.0MB      | 0.0MB     
+    CAMeL-Lab/bert-base-arabic-camelbert-mix-sentiment | AR   | 2.39s      | 180.0ms    | 0.0MB      | 0.0MB     
+    twitter-roberta-base-sentiment-latest            | EN   | 1.23s      | 160.1ms    | 286.8MB    | 0.0MB     
+    distilcamembert-base-sentiment                   | FR   | 1.30s      | 102.0ms    | 198.8MB    | 0.0MB     
+    twitter-xlm-roberta-base-sentiment               | AR   | 6.22s      | 220.0ms    | 589.3MB    | 0.0MB     
+    twitter-xlm-roberta-base-sentiment               | EN   | 8.60s      | 244.6ms    | 567.5MB    | 0.0MB     
+    twitter-xlm-roberta-base-sentiment               | FR   | 4.95s      | 240.2ms    | 571.2MB    | 0.0MB     
+
+  [NER Models]
+    Model                                            | Lang | Load Time  | Avg/Doc    | Peak CPU   | Peak GPU  
+    -------------------------------------------------+------+------------+------------+------------+-----------
+    arabic-ner                                       | AR   | 0.81s      | 141.3ms    | 341.6MB    | 0.0MB     
+    bert-base-NER                                    | EN   | 0.81s      | 204.0ms    | 349.7MB    | 0.0MB     
+    camembert-ner                                    | FR   | 1.59s      | 246.4ms    | 345.5MB    | 0.0MB     
+    gliner_multi-v2.1                                | AR   | 30.98s     | 689.6ms    | 1357.6MB   | 0.0MB     
+    gliner_multi-v2.1                                | EN   | 27.69s     | 580.0ms    | 187.8MB    | 0.0MB     
+    gliner_multi-v2.1                                | FR   | 27.17s     | 496.8ms    | 90.7MB     | 0.0MB     
+
+--- GPU Execution Performance & Memory Footprint ---
+
+  [TOPIC Models]
+    Model                                            | Lang | Load Time  | Avg/Doc    | Peak CPU   | Peak GPU  
+    -------------------------------------------------+------+------------+------------+------------+-----------
+    Qwen-LLM                                         | AR   | 0.00s      | 3753.5ms   | 0.1MB      | 0.0MB     
+    Qwen-LLM                                         | EN   | 0.00s      | 4058.6ms   | 0.0MB      | 0.0MB     
+    Qwen-LLM                                         | FR   | 0.00s      | 3621.0ms   | 0.0MB      | 0.0MB     
+    DeBERTa-v3-large-mnli-fever-anli-ling-wanli      | EN   | 2.26s      | 1970.2ms   | 874.2MB    | 1667.8MB  
+    bart-large-mnli                                  | EN   | 2.31s      | 1042.4ms   | 0.0MB      | 1553.9MB  
+    french_xlm_xnli                                  | FR   | 1.95s      | 282.7ms    | 203.3MB    | 1060.7MB  
+    mDeBERTa-v3-base-xnli-multilingual-nli-2mil7     | AR   | 1.48s      | 724.0ms    | 426.1MB    | 1064.4MB  
+    mDeBERTa-v3-base-xnli-multilingual-nli-2mil7     | EN   | 1.48s      | 609.8ms    | 281.2MB    | 1064.4MB  
+    mDeBERTa-v3-base-xnli-multilingual-nli-2mil7     | FR   | 1.37s      | 444.6ms    | 279.2MB    | 1064.4MB  
+
+  [SENTIMENT Models]
+    Model                                            | Lang | Load Time  | Avg/Doc    | Peak CPU   | Peak GPU  
+    -------------------------------------------------+------+------------+------------+------------+-----------
+    Qwen-LLM                                         | AR   | 0.00s      | 3600.9ms   | 0.0MB      | 0.0MB     
+    Qwen-LLM                                         | EN   | 0.00s      | 3825.7ms   | 0.0MB      | 0.0MB     
+    Qwen-LLM                                         | FR   | 0.00s      | 3592.0ms   | 0.0MB      | 0.0MB     
+    CAMeL-Lab/bert-base-arabic-camelbert-mix-sentiment | AR   | 0.75s      | 8.5ms      | 381.0MB    | 416.4MB   
+    twitter-roberta-base-sentiment-latest            | EN   | 0.85s      | 11.5ms     | 0.0MB      | 476.4MB   
+    distilcamembert-base-sentiment                   | FR   | 0.59s      | 8.6ms      | 4.9MB      | 260.1MB   
+    twitter-xlm-roberta-base-sentiment               | AR   | 2.31s      | 10.2ms     | 118.9MB    | 1060.7MB  
+    twitter-xlm-roberta-base-sentiment               | EN   | 2.11s      | 9.1ms      | 132.6MB    | 1060.7MB  
+    twitter-xlm-roberta-base-sentiment               | FR   | 2.16s      | 10.0ms     | 138.0MB    | 1060.7MB  
+
+  [NER Models]
+    Model                                            | Lang | Load Time  | Avg/Doc    | Peak CPU   | Peak GPU  
+    -------------------------------------------------+------+------------+------------+------------+-----------
+    arabic-ner                                       | AR   | 0.72s      | 9.3ms      | 9.2MB      | 420.2MB   
+    bert-base-NER                                    | EN   | 0.71s      | 8.1ms      | 6.7MB      | 411.1MB   
+    camembert-ner                                    | FR   | 0.89s      | 9.7ms      | 7.1MB      | 420.1MB   
+    gliner_multi-v2.1                                | AR   | 6.23s      | 25.8ms     | 1964.1MB   | 1103.9MB  
+    gliner_multi-v2.1                                | EN   | 6.07s      | 22.2ms     | 111.1MB    | 1103.9MB  
+    gliner_multi-v2.1                                | FR   | 5.99s      | 22.4ms     | 949.6MB    | 1103.9MB  
+
+--- CPU vs GPU Hardware Acceleration Analysis ---
+  * TOPIC | Qwen-LLM (AR): GPU is 1.5x faster than CPU
+  * TOPIC | Qwen-LLM (EN): GPU is 1.2x faster than CPU
+  * TOPIC | Qwen-LLM (FR): GPU is 1.5x faster than CPU
+  * SENTIMENT | Qwen-LLM (AR): GPU is 1.6x faster than CPU
+  * SENTIMENT | Qwen-LLM (EN): GPU is 1.2x faster than CPU
+  * SENTIMENT | Qwen-LLM (FR): GPU is 1.5x faster than CPU
+  * TOPIC | DeBERTa-v3-large-mnli-fever-anli-ling-wanli (EN): GPU is 11.2x faster than CPU
+  * TOPIC | bart-large-mnli (EN): GPU is 12.0x faster than CPU
+  * TOPIC | french_xlm_xnli (FR): GPU is 16.5x faster than CPU
+  * TOPIC | mDeBERTa-v3-base-xnli-multilingual-nli-2mil7 (AR): GPU is 13.9x faster than CPU
+  * TOPIC | mDeBERTa-v3-base-xnli-multilingual-nli-2mil7 (EN): GPU is 15.2x faster than CPU
+  * TOPIC | mDeBERTa-v3-base-xnli-multilingual-nli-2mil7 (FR): GPU is 21.7x faster than CPU
+  * SENTIMENT | CAMeL-Lab/bert-base-arabic-camelbert-mix-sentiment (AR): GPU is 21.3x faster than CPU
+  * SENTIMENT | twitter-roberta-base-sentiment-latest (EN): GPU is 14.0x faster than CPU
+  * SENTIMENT | distilcamembert-base-sentiment (FR): GPU is 11.9x faster than CPU
+  * SENTIMENT | twitter-xlm-roberta-base-sentiment (AR): GPU is 21.6x faster than CPU
+  * SENTIMENT | twitter-xlm-roberta-base-sentiment (EN): GPU is 27.0x faster than CPU
+  * SENTIMENT | twitter-xlm-roberta-base-sentiment (FR): GPU is 24.0x faster than CPU
+  * NER | arabic-ner (AR): GPU is 15.2x faster than CPU
+  * NER | bert-base-NER (EN): GPU is 25.3x faster than CPU
+  * NER | camembert-ner (FR): GPU is 25.4x faster than CPU
+  * NER | gliner_multi-v2.1 (AR): GPU is 26.7x faster than CPU
+  * NER | gliner_multi-v2.1 (EN): GPU is 26.1x faster than CPU
+  * NER | gliner_multi-v2.1 (FR): GPU is 22.1x faster than CPU
+======================================================================

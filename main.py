@@ -31,7 +31,7 @@ from pipeline.cpu_pass import run_cpu_pass
 from pipeline.gpu_pass import run_gpu_pass
 from pipeline.exporter import export_lang_samples_csv
 
-from analysis.report_generator   import generate_analytics_reports
+from analysis.report_generator   import generate_analytics_reports, generate_comparison_report
 
 
 # ---------------------------------------------------------------------------
@@ -276,7 +276,7 @@ def main():
                 logger.info(f"Topic & Sentiment results saved to {ts_csv_path}")
 
     # ================================================================
-    # STAGE 5 — Analytics Reports
+    # STAGE 5 — Analytics & Comparison Reports
     # ================================================================
     try:
         generate_analytics_reports(
@@ -291,6 +291,14 @@ def main():
         logger.info("Analytics CSVs generated.")
     except Exception as e:
         logger.error(f"Analytics report failed: {e}")
+
+    try:
+        generate_comparison_report(
+            run_dir=run_dir,
+        )
+        logger.info("Comparison reports generated.")
+    except Exception as e:
+        logger.error(f"Comparison report failed: {e}")
 
     # ================================================================
     # STAGE 6 — Global Entity Frequencies

@@ -16,7 +16,7 @@ if sys.stdout.encoding.lower() != 'utf-8':
 from src.config import Config
 from src.topic_generation import CATEGORY_DISPLAY
 
-CSV_PATH = PROJECT_ROOT / "scripts" / "manual_eval_sample_topic.csv"
+CSV_PATH = PROJECT_ROOT / "scripts" / "manual_eval_global.csv"
 
 try:
     import arabic_reshaper
