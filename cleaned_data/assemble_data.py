@@ -4,7 +4,7 @@ Script to assemble and distribute data across multiple PCs.
 This script:
 1. Combines english_texts.csv, french_texts.csv, and accepted_articles.csv
 2. Saves the combined data as global_data.csv
-3. Splits the combined data into 4 CSV files for 4 PCs
+3. Splits the combined data into 5 CSV files for 5 PCs
 """
 
 import pandas as pd
@@ -19,7 +19,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Define paths
-PROJECT_ROOT = Path(__file__).parent.parent.parent  # PROJET_PFE directory
+PROJECT_ROOT = Path(__file__).parent.parent  # PROJET_PFE directory
 DATA_SEPERATION = PROJECT_ROOT / "data_seperation"
 GLOBAL_DATA_DIR = DATA_SEPERATION / "global_data"
 CHECK_DIALECT_DIR = DATA_SEPERATION / "check_dialect"
@@ -36,6 +36,7 @@ PC1_FILE = OUTPUT_DIR / "global_data_pc1.csv"
 PC2_FILE = OUTPUT_DIR / "global_data_pc2.csv"
 PC3_FILE = OUTPUT_DIR / "global_data_pc3.csv"
 PC4_FILE = OUTPUT_DIR / "global_data_pc4.csv"
+PC5_FILE = OUTPUT_DIR / "global_data_pc5.csv"
 
 
 def validate_input_files():
@@ -120,42 +121,45 @@ def save_combined_data(df):
 
 
 def split_into_pcs(df):
-    """Split the combined data into 4 PC files."""
-    logger.info("\nSplitting data into 4 PC files...")
-    
+    """Split the combined data into 5 PC files."""
+    logger.info("\nSplitting data into 5 PC files...")
+
     try:
         # Calculate split points
         total_rows = len(df)
-        rows_per_pc = total_rows // 4
-        
+        rows_per_pc = total_rows // 5
+
         logger.info(f"Total rows: {total_rows}")
         logger.info(f"Rows per PC: ~{rows_per_pc}")
-        
+
         # Split data
         pc1_df = df.iloc[:rows_per_pc]
         pc2_df = df.iloc[rows_per_pc:2*rows_per_pc]
         pc3_df = df.iloc[2*rows_per_pc:3*rows_per_pc]
-        pc4_df = df.iloc[3*rows_per_pc:]
-        
+        pc4_df = df.iloc[3*rows_per_pc:4*rows_per_pc]
+        pc5_df = df.iloc[4*rows_per_pc:]
+
         # Save split files
         files_and_data = [
             (PC1_FILE, pc1_df),
             (PC2_FILE, pc2_df),
             (PC3_FILE, pc3_df),
-            (PC4_FILE, pc4_df)
+            (PC4_FILE, pc4_df),
+            (PC5_FILE, pc5_df)
         ]
-        
+
         for file_path, data_df in files_and_data:
             data_df.to_csv(file_path, index=False)
             logger.info(f"✓ {file_path.name}: {len(data_df)} rows")
-        
+
         logger.info("\n✓ All PC files created successfully!")
-        
+
         return {
             "pc1": len(pc1_df),
             "pc2": len(pc2_df),
             "pc3": len(pc3_df),
-            "pc4": len(pc4_df)
+            "pc4": len(pc4_df),
+            "pc5": len(pc5_df)
         }
         
     except Exception as e:
@@ -204,6 +208,7 @@ def main():
     logger.info(f"PC2 file: {split_results['pc2']:,} rows")
     logger.info(f"PC3 file: {split_results['pc3']:,} rows")
     logger.info(f"PC4 file: {split_results['pc4']:,} rows")
+    logger.info(f"PC5 file: {split_results['pc5']:,} rows")
     logger.info("=" * 70)
     
     return True

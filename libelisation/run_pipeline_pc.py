@@ -3,6 +3,7 @@ import sys
 import threading
 import logging
 import pandas as pd
+import time
 from pathlib import Path
 from tqdm import tqdm
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -21,7 +22,7 @@ from src.preprocessing import PreprocessRouter
 # ==========================================
 PC_ID = 1          # Partition identifier: 1, 2, 3, or 4
 NUM_WORKERS = 4    # Number of concurrent workers calling Ollama in parallel
-SAVE_INTERVAL = 5  # Autosave database-matching CSV files every N articles
+SAVE_INTERVAL = 100  # Autosave every N articles (INCREASED to reduce save frequency)
 
 # ==========================================
 # FILE SYSTEM PATHS
@@ -43,7 +44,6 @@ DIALECT_TO_ISO = {
 }
 
 def map_language_code(lang: str) -> str:
-    """Map Arabic dialects to 'ar', standardizing other codes."""
     if not isinstance(lang, str):
         return "en"
     clean_lang = lang.strip().lower()
@@ -66,27 +66,139 @@ def custom_preprocess(preproc, text: str, lang: str, task: str) -> str:
         elif task == "sentiment":
             params["remove_repeated"] = False
         return preproc.ar.preprocess(text, **params)
-    
+
     # Latin languages (en, fr, etc.)
     if task == "sentiment":
         from src.preprocessing.router import LATIN_SENTIMENT_PARAMS
         params = LATIN_SENTIMENT_PARAMS.copy()
-        params["standardize_social"] = False  # remove @user and http entirely
-        params["reduce_repetitions"] = False  # leave repetitions intact
+        params["standardize_social"] = False
+        params["reduce_repetitions"] = False
         return preproc.lat.preprocess(text, **params)
-    
+
     if task == "topic":
         from src.preprocessing.router import LATIN_TOPIC_PARAMS
         params = LATIN_TOPIC_PARAMS.copy()
-        params["standardize_social"] = False  # remove @user and http entirely
-        params["reduce_repetitions"] = True   # remove repeated letters (reduce to max of 2 repetitions)
+        params["standardize_social"] = False
+        params["reduce_repetitions"] = True
         return preproc.lat.preprocess(text, **params)
 
-    # Fallback to standard preprocessor routing
     return preproc.preprocess(text, lang, task)
 
+
+def run_phase(phase_name, records, needs_ids, data_store, process_fn, save_fn,
+              save_lock, save_interval, logger, num_workers):
+    """Run a full annotation phase (topic or sentiment) over all pending records with separate locks for data and save."""
+    if not records:
+        logger.info(f"[{phase_name}] No articles to process — all already annotated.")
+        return
+
+    processed_counter = 0
+    shutdown_requested = False
+    progress_bar = tqdm(total=len(records), desc=f"{phase_name} Pass", unit="art")
+    
+    # Separate locks: one for data updates, one for save operations
+    data_lock = threading.Lock()
+    
+    # Timing tracking
+    timings = {
+        "total": []
+    }
+    
+    phase_start_time = time.time()
+
+    def worker(row):
+        nonlocal processed_counter, shutdown_requested
+        if shutdown_requested:
+            return
+
+        aid = int(row["id"])
+        text = str(row["text"])
+        orig_lang = str(row["language"])
+        mapped_lang = map_language_code(orig_lang)
+
+        if not text.strip():
+            text = "empty"
+
+        if aid in needs_ids:
+            t_total_start = time.time()
+            result = process_fn(aid, text, mapped_lang, orig_lang)
+            t_total_end = time.time()
+            timings["total"].append(t_total_end - t_total_start)
+        else:
+            result = None  # already in checkpoint, nothing to do
+
+        if result is not None:
+            # Quick lock just for updating the dict
+            with data_lock:
+                data_store[aid] = result
+                processed_counter += 1
+                should_save = (processed_counter % save_interval == 0)
+            
+            # SEPARATE: Do save operation OUTSIDE the data lock
+            if should_save:
+                with save_lock:
+                    t_save_before = time.time()
+                    save_fn()
+                    t_save_after = time.time()
+                    save_time = t_save_after - t_save_before
+                    if save_time > 2:
+                        print(f"\n⚠️  [{phase_name}] SAVE OPERATION TOOK {save_time:.2f}s (articles in memory: {len(data_store)})")
+
+        progress_bar.update(1)
+        
+        # Print diagnostic every 20 articles
+        if processed_counter > 0 and processed_counter % 20 == 0:
+            avg_total = sum(timings["total"][-20:]) / min(20, len(timings["total"]))
+            elapsed = time.time() - phase_start_time
+            rate = processed_counter / elapsed if elapsed > 0 else 0
+            print(f"\n[{phase_name}] Processed {processed_counter:,} articles | Avg time: {avg_total:.2f}s/art | Rate: {rate:.2f} art/s")
+
+    try:
+        with ThreadPoolExecutor(max_workers=num_workers) as executor:
+            futures = {executor.submit(worker, r): r for r in records}
+            for future in as_completed(futures):
+                if shutdown_requested:
+                    break
+                try:
+                    future.result()
+                except Exception as e:
+                    logger.error(f"[{phase_name}] Worker exception: {e}")
+
+    except KeyboardInterrupt:
+        print("\n" + "!" * 60)
+        print(f" [WARNING] Interrupted during {phase_name} phase!")
+        print(" Saving progress and shutting down safely...")
+        print("!" * 60 + "\n")
+        shutdown_requested = True
+        with save_lock:
+            save_fn()
+        progress_bar.close()
+        print("[SUCCESS] Progress saved — you can resume anytime.")
+        sys.exit(0)
+
+    progress_bar.close()
+    
+    # Final save
+    with save_lock:
+        save_fn()
+    
+    # Print final diagnostics
+    total_phase_time = time.time() - phase_start_time
+    if timings["total"]:
+        avg_total = sum(timings["total"]) / len(timings["total"])
+        print(f"\n{'='*60}")
+        print(f"[{phase_name}] PHASE DIAGNOSTICS")
+        print(f"{'='*60}")
+        print(f"Total articles processed: {processed_counter:,}")
+        print(f"Total phase time: {total_phase_time:.2f}s ({total_phase_time/60:.2f} minutes)")
+        print(f"Average time per article: {avg_total:.2f}s")
+        print(f"Throughput: {processed_counter / total_phase_time:.2f} articles/second")
+        print(f"{'='*60}\n")
+    
+    logger.info(f"[{phase_name}] Phase complete. {processed_counter:,} articles annotated this session.")
+
+
 def main():
-    # Setup clean console logging
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s [%(levelname)s] %(message)s",
@@ -98,6 +210,7 @@ def main():
     print(f"      QWEN PARALLEL ANNOTATOR (PC {PC_ID}) — GPU PASS ONLY")
     print("=" * 60)
     print(f"Configured Workers  : {NUM_WORKERS} threads")
+    print(f"Save Interval       : Every {SAVE_INTERVAL} articles")
     print(f"Input File         : {INPUT_FILE}")
     print(f"Enriched Output    : {ENRICHED_OUTPUT_FILE}")
     print(f"Topics Output      : {TOPICS_OUTPUT_FILE}")
@@ -115,16 +228,13 @@ def main():
     input_df = pd.read_csv(INPUT_FILE)
     logger.info(f"Loaded {len(input_df):,} articles for PC {PC_ID}.")
 
-    # Standardize input structure
     if "id" not in input_df.columns or "text" not in input_df.columns:
         logger.error("Input CSV must contain 'id' and 'text' columns.")
         sys.exit(1)
     if "language" not in input_df.columns:
-        # Fallback if language is missing
         input_df["language"] = "en"
 
-    # [3] Load existing checkpoints (dynamic resume state)
-    # We load as dictionaries keyed by article_id for instant O(1) lookups
+    # [3] Load existing checkpoints
     enriched_data = {}
     topic_data = {}
 
@@ -155,197 +265,127 @@ def main():
         except Exception as e:
             logger.warning(f"Failed to read existing topics output: {e}. Starting fresh.")
 
-    # Reentrant Thread Lock to guarantee thread-safe file writes
     save_lock = threading.Lock()
 
-    def save_progress():
-        """Helper function to dump current in-memory maps safely to disk."""
-        with save_lock:
-            if enriched_data:
-                df_enriched = pd.DataFrame(list(enriched_data.values()))
-                # Enforce schema columns: article_id, language, sentiment_label
-                cols = ["article_id", "language", "sentiment_label"]
-                df_enriched = df_enriched[[c for c in cols if c in df_enriched.columns]]
-                df_enriched.to_csv(ENRICHED_OUTPUT_FILE, index=False, encoding="utf-8-sig")
+    def save_topics():
+        if topic_data:
+            df = pd.DataFrame(list(topic_data.values()))
+            cols = ["article_id", "topic_label"]
+            df = df[[c for c in cols if c in df.columns]]
+            df.to_csv(TOPICS_OUTPUT_FILE, index=False, encoding="utf-8-sig")
 
-            if topic_data:
-                df_topics = pd.DataFrame(list(topic_data.values()))
-                cols = ["article_id", "topic_label"]
-                df_topics = df_topics[[c for c in cols if c in df_topics.columns]]
-                df_topics.to_csv(TOPICS_OUTPUT_FILE, index=False, encoding="utf-8-sig")
+    def save_enriched():
+        if enriched_data:
+            df = pd.DataFrame(list(enriched_data.values()))
+            cols = ["article_id", "language", "sentiment_label"]
+            df = df[[c for c in cols if c in df.columns]]
+            df.to_csv(ENRICHED_OUTPUT_FILE, index=False, encoding="utf-8-sig")
 
-    # [4] Identify unprocessed items
-    # Check if we need to run Sentiment or Topic for each row
+    # [4] Identify what still needs processing
     needs_sentiment_ids = set()
     needs_topic_ids = set()
 
     for row in input_df.itertuples(index=False):
         aid = int(row.id)
-        
-        # Needs sentiment if not in checkpoint, or sentiment label is blank/NaN
+
         sent_info = enriched_data.get(aid)
         if not sent_info or pd.isna(sent_info.get("sentiment_label")) or str(sent_info.get("sentiment_label")).strip() == "":
             needs_sentiment_ids.add(aid)
 
-        # Needs topic if not in checkpoint, or topic label is blank/NaN
         topic_info = topic_data.get(aid)
         if not topic_info or pd.isna(topic_info.get("topic_label")) or str(topic_info.get("topic_label")).strip() == "":
             needs_topic_ids.add(aid)
 
-    # Combined set of any article needing any processing
-    target_ids = needs_sentiment_ids.union(needs_topic_ids)
-    
-    # Filter our DataFrame rows that require work
-    work_df = input_df[input_df["id"].isin(target_ids)].copy()
-    records = work_df.to_dict("records")
-
     logger.info(f"Dynamic state analysis complete:")
-    logger.info(f"  - Total articles in partition : {len(input_df):,}")
-    logger.info(f"  - Needing sentiment prediction: {len(needs_sentiment_ids):,}")
-    logger.info(f"  - Needing topic prediction    : {len(needs_topic_ids):,}")
-    logger.info(f"  - Total unique articles to process: {len(records):,}")
+    logger.info(f"  - Total articles in partition    : {len(input_df):,}")
+    logger.info(f"  - Needing topic prediction       : {len(needs_topic_ids):,}")
+    logger.info(f"  - Needing sentiment prediction   : {len(needs_sentiment_ids):,}")
 
-    if not records:
+    if not needs_topic_ids and not needs_sentiment_ids:
         print("\n[SUCCESS] All articles in this partition are already fully annotated!")
         return
 
-    # [5] Initialize Models
+    # [5] Initialize models
     logger.info("Initializing Preprocessor Router and Qwen LLM Analyzers...")
     preproc = PreprocessRouter(logger=logger)
     topic_model = LLMTopic(logger=logger)
     sentiment_model = LLMSentiment(logger=logger)
 
-    processed_counter = 0
-    progress_bar = tqdm(total=len(records), desc="Annotating with Qwen", unit="art")
+    # =====================================================================
+    # PHASE 1 — TOPIC
+    # =====================================================================
+    print("\n" + "=" * 60)
+    print("  PHASE 1 / 2 — TOPIC ANNOTATION")
+    print("=" * 60)
 
-    # Clean shutdown flag for thread pool cancellation
-    shutdown_requested = False
+    topic_records = input_df[input_df["id"].isin(needs_topic_ids)].to_dict("records")
 
-    def process_single_article(row):
-        """Worker task executing inference for one article row."""
-        nonlocal processed_counter, shutdown_requested
-        if shutdown_requested:
-            return
+    def process_topic(aid, text, mapped_lang, _orig_lang):
+        try:
+            preprocessed = custom_preprocess(preproc, text, mapped_lang, "topic")
+            res = topic_model.predict(preprocessed, mapped_lang)
+            label = res.label
+        except Exception as e:
+            logger.warning(f"[Topic] Failed article_id={aid}: {e}")
+            from src.topic_generation import CATEGORY_DISPLAY
+            label = CATEGORY_DISPLAY[17].get(mapped_lang, "General")
+        return {"article_id": aid, "topic_label": label}
 
-        aid = int(row["id"])
-        text = str(row["text"])
-        orig_lang = str(row["language"])
-        mapped_lang = map_language_code(orig_lang)
+    run_phase(
+        phase_name="Topic",
+        records=topic_records,
+        needs_ids=needs_topic_ids,
+        data_store=topic_data,
+        process_fn=process_topic,
+        save_fn=save_topics,
+        save_lock=save_lock,
+        save_interval=SAVE_INTERVAL,
+        logger=logger,
+        num_workers=NUM_WORKERS,
+    )
 
-        # Ensure text is not empty
-        if not text.strip():
-            text = "empty"
+    # =====================================================================
+    # PHASE 2 — SENTIMENT
+    # =====================================================================
+    print("\n" + "=" * 60)
+    print("  PHASE 2 / 2 — SENTIMENT ANNOTATION")
+    print("=" * 60)
 
-        # ---------------------------------------------------------------------
-        # [A] COMMENTED NER EXTRACTION LOGIC (Bypassed but preserved as requested)
-        # ---------------------------------------------------------------------
-        # # Entities are bypassed here as NER is commented out.
-        # # If we ever want to re-run entity predictions:
-        # try:
-        #     # Step 1: Preprocess text for NER
-        #     # preprocessed_ner = preproc.preprocess(text, mapped_lang, "ner")
-        #     # Step 2: Invoke NER pipeline
-        #     # ents = ner.predict(preprocessed_ner)
-        #     # Step 3: Upsert into entities structures...
-        #     pass
-        # except Exception as ner_err:
-        #     # logger.error(f"NER failed for article_id={aid}: {ner_err}")
-        #     pass
+    sentiment_records = input_df[input_df["id"].isin(needs_sentiment_ids)].to_dict("records")
 
-        # ---------------------------------------------------------------------
-        # [B] Sentiment Prediction Step
-        # ---------------------------------------------------------------------
-        sentiment_label = None
-        if aid in needs_sentiment_ids:
-            try:
-                preprocessed_sent = custom_preprocess(preproc, text, mapped_lang, "sentiment")
-                res = sentiment_model.predict(preprocessed_sent, mapped_lang)
-                sentiment_label = res.label
-            except Exception as e:
-                logger.warning(f"Sentiment analysis failed for article_id={aid}: {e}")
-                sentiment_label = "UNK"
-        else:
-            # Re-use existing value from checkpoint
-            sentiment_label = enriched_data[aid]["sentiment_label"]
+    def process_sentiment(aid, text, mapped_lang, orig_lang):
+        try:
+            preprocessed = custom_preprocess(preproc, text, mapped_lang, "sentiment")
+            res = sentiment_model.predict(preprocessed, mapped_lang)
+            label = res.label
+        except Exception as e:
+            logger.warning(f"[Sentiment] Failed article_id={aid}: {e}")
+            label = "UNK"
+        return {"article_id": aid, "language": orig_lang, "sentiment_label": label}
 
-        # ---------------------------------------------------------------------
-        # [C] Topic Prediction Step
-        # ---------------------------------------------------------------------
-        topic_label = None
-        if aid in needs_topic_ids:
-            try:
-                preprocessed_topic = custom_preprocess(preproc, text, mapped_lang, "topic")
-                res = topic_model.predict(preprocessed_topic, mapped_lang)
-                topic_label = res.label
-            except Exception as e:
-                logger.warning(f"Topic classification failed for article_id={aid}: {e}")
-                # Fallback to General category in matching language
-                from src.topic_generation import CATEGORY_DISPLAY
-                topic_label = CATEGORY_DISPLAY[17].get(mapped_lang, "General")
-        else:
-            # Re-use existing value from checkpoint
-            topic_label = topic_data[aid]["topic_label"]
+    run_phase(
+        phase_name="Sentiment",
+        records=sentiment_records,
+        needs_ids=needs_sentiment_ids,
+        data_store=enriched_data,
+        process_fn=process_sentiment,
+        save_fn=save_enriched,
+        save_lock=save_lock,
+        save_interval=SAVE_INTERVAL,
+        logger=logger,
+        num_workers=NUM_WORKERS,
+    )
 
-        # ---------------------------------------------------------------------
-        # [D] Update State (Thread-Safe)
-        # ---------------------------------------------------------------------
-        with save_lock:
-            enriched_data[aid] = {
-                "article_id": aid,
-                "language": orig_lang,
-                "sentiment_label": sentiment_label
-            }
-            topic_data[aid] = {
-                "article_id": aid,
-                "topic_label": topic_label
-            }
-            
-            processed_counter += 1
-            
-            # Periodically write to CSV to secure progress against OOMs/crashes
-            if processed_counter % SAVE_INTERVAL == 0:
-                save_progress()
-
-        progress_bar.update(1)
-
-    # [6] Parallel thread pool execution with dynamic shutdown handling
-    try:
-        with ThreadPoolExecutor(max_workers=NUM_WORKERS) as executor:
-            # Submit all rows
-            futures = {executor.submit(process_single_article, r): r for r in records}
-            
-            for future in as_completed(futures):
-                if shutdown_requested:
-                    break
-                try:
-                    future.result()
-                except Exception as e:
-                    logger.error(f"Worker thread exception: {e}")
-                    
-    except KeyboardInterrupt:
-        print("\n" + "!" * 60)
-        print(" [WARNING] Execution interrupted by user (Ctrl+C)!")
-        print(" Shutting down parallel worker pool safely and saving progress...")
-        print("!" * 60 + "\n")
-        
-        shutdown_requested = True
-        # Cancel all pending futures in the queue immediately
-        save_progress()
-        progress_bar.close()
-        print("[SUCCESS] All current annotations secured! You can resume anytime.")
-        sys.exit(0)
-
-    # Final Progress Bar Close & Data Save
-    progress_bar.close()
-    save_progress()
-    
+    # =====================================================================
+    # DONE
+    # =====================================================================
     print("\n" + "=" * 60)
     print("      ANNOTATION PIPELINE COMPLETED SUCCESSFULLY!")
     print("=" * 60)
-    print(f"Total processed in this session: {processed_counter:,} articles.")
-    print(f"Enriched results exported to   : {ENRICHED_OUTPUT_FILE.name}")
     print(f"Topic results exported to      : {TOPICS_OUTPUT_FILE.name}")
+    print(f"Enriched results exported to   : {ENRICHED_OUTPUT_FILE.name}")
     print("=" * 60 + "\n")
+
 
 if __name__ == "__main__":
     main()

@@ -1,8 +1,0 @@
-ensemble_label
-MGR    541415
-MSA    535163
-GLF    137665
-LEV     58130
-EGY     31387
-Name: count, dtype: int64
-Total: 1303760
