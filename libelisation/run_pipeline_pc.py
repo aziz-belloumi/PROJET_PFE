@@ -49,6 +49,42 @@ def map_language_code(lang: str) -> str:
     clean_lang = lang.strip().lower()
     return DIALECT_TO_ISO.get(clean_lang, clean_lang)
 
+def custom_preprocess(preproc, text: str, lang: str, task: str) -> str:
+    """
+    Custom preprocessing routing logic to satisfy user specifications:
+    - Sentiment (all languages): remove @user and http entirely (standardize_social=False), leave repetition intact (reduce_repetitions/remove_repeated=False).
+    - Topic (all languages): remove @user and http entirely (standardize_social=False), remove repeated letters (reduce_repetitions/remove_repeated=True).
+    """
+    lang = (lang or "").lower().strip()
+    task = (task or "").lower().strip()
+
+    if lang == "ar":
+        from src.preprocessing.router import PREPROCESS_SENTIMENT_PARAMS
+        params = PREPROCESS_SENTIMENT_PARAMS.copy()
+        if task == "topic":
+            params["remove_repeated"] = True
+        elif task == "sentiment":
+            params["remove_repeated"] = False
+        return preproc.ar.preprocess(text, **params)
+    
+    # Latin languages (en, fr, etc.)
+    if task == "sentiment":
+        from src.preprocessing.router import LATIN_SENTIMENT_PARAMS
+        params = LATIN_SENTIMENT_PARAMS.copy()
+        params["standardize_social"] = False  # remove @user and http entirely
+        params["reduce_repetitions"] = False  # leave repetitions intact
+        return preproc.lat.preprocess(text, **params)
+    
+    if task == "topic":
+        from src.preprocessing.router import LATIN_TOPIC_PARAMS
+        params = LATIN_TOPIC_PARAMS.copy()
+        params["standardize_social"] = False  # remove @user and http entirely
+        params["reduce_repetitions"] = True   # remove repeated letters (reduce to max of 2 repetitions)
+        return preproc.lat.preprocess(text, **params)
+
+    # Fallback to standard preprocessor routing
+    return preproc.preprocess(text, lang, task)
+
 def main():
     # Setup clean console logging
     logging.basicConfig(
@@ -222,7 +258,7 @@ def main():
         sentiment_label = None
         if aid in needs_sentiment_ids:
             try:
-                preprocessed_sent = preproc.preprocess(text, mapped_lang, "sentiment")
+                preprocessed_sent = custom_preprocess(preproc, text, mapped_lang, "sentiment")
                 res = sentiment_model.predict(preprocessed_sent, mapped_lang)
                 sentiment_label = res.label
             except Exception as e:
@@ -238,7 +274,7 @@ def main():
         topic_label = None
         if aid in needs_topic_ids:
             try:
-                preprocessed_topic = preproc.preprocess(text, mapped_lang, "topic")
+                preprocessed_topic = custom_preprocess(preproc, text, mapped_lang, "topic")
                 res = topic_model.predict(preprocessed_topic, mapped_lang)
                 topic_label = res.label
             except Exception as e:
