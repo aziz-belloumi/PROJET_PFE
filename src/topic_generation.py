@@ -25,7 +25,7 @@ class TopicResult:
 
 OLLAMA_URL = "http://localhost:11434/api/generate"
 MODEL_NAME = "qwen2.5:7b"
-CHUNK_SIZE = 4000
+CHUNK_SIZE = 3000
 CHUNK_OVERLAP = 400
 MAX_RETRIES = 3
 
@@ -48,11 +48,15 @@ CATEGORY_DISPLAY = {
     14: {"ar": "الدبلوماسية",  "fr": "Diplomatie",     "en": "Diplomacy"},
     15: {"ar": "الدين",        "fr": "Religion",       "en": "Religion"},
     16: {"ar": "الهجرة",       "fr": "Migration",      "en": "Migration"},
-    17: {"ar": "عام",         "fr": "Général",          "en": "General"},
+    17: {"ar": "عام",          "fr": "Général",        "en": "General"},
 }
 
-# Flat set of every valid label across all languages (for known category validation)
-TOPIC_ALLOWED_LABELS = {v for row in CATEGORY_DISPLAY.values() for v in row.values()}
+# Group allowed labels strictly by language to prevent cross-contamination leaks
+ALLOWED_LABELS_BY_LANG = {
+    "ar": {row["ar"] for row in CATEGORY_DISPLAY.values()},
+    "fr": {row["fr"] for row in CATEGORY_DISPLAY.values()},
+    "en": {row["en"] for row in CATEGORY_DISPLAY.values()},
+}
 
 
 # ---------------------------------------------------------------------------
@@ -60,9 +64,11 @@ TOPIC_ALLOWED_LABELS = {v for row in CATEGORY_DISPLAY.values() for v in row.valu
 # ---------------------------------------------------------------------------
 
 def chunk_article(text, size=CHUNK_SIZE, overlap=CHUNK_OVERLAP):
-    """Split long article into overlapping chunks."""
+    """Split long article into overlapping chunks using character offsets."""
     chunks = []
     start = 0
+    if not text:
+        return chunks
 
     while start < len(text):
         end = start + size
@@ -73,11 +79,7 @@ def chunk_article(text, size=CHUNK_SIZE, overlap=CHUNK_OVERLAP):
 
 
 def build_topic_prompt(language, article):
-    """
-    Build the prompt with the expanded category table and instructions
-    to allow the LLM to suggest new general categories if needed.
-    """
-    # Build the multilingual label table for the prompt
+    """Build the prompt with strict structural rules and exclusive options."""
     table_lines = ["Arabic | French | English"]
     for row in CATEGORY_DISPLAY.values():
         table_lines.append(f"{row['ar']} | {row['fr']} | {row['en']}")
@@ -85,39 +87,34 @@ def build_topic_prompt(language, article):
 
     return f"""You are evaluating topic classification for news articles.
 
-The article may be written in Arabic, English, or French.
-Article language: {language}
+The article is written in: {language}
 
 Article:
 {article}
 
 **Instructions:**
 1. Choose the MOST appropriate general category from the table below.
-2. If NONE of the categories fit well, you may suggest ONE new general category at the same abstraction level.
-   Examples of valid new categories: "Infrastructure", "Transportation", "Corruption", "Human Rights"
-3. Return the label in the SAME language as the article.
-4. Do NOT use specific terms like "Oil Prices", "COVID-19", or "Gaza War" — only high-level themes.
-5. The category must be 1-3 words maximum.
+2. You MUST select ONLY from the provided 18 categories. Do NOT suggest or invent new categories.
+3. Return the label in {language} (matching the language of the article).
+4. The category must match EXACTLY one of the labels from the table below.
 
-**Available Categories:**
+**Available Categories (18 options only):**
 {label_table}
 
-**Output format (two lines only, no explanations):**
-
-true_prediction: <exact label from table OR new general category>
-true_language: <Arabic | English | French>"""
+**Output format (One single line only, no explanations):**
+true_prediction: <exact label from table>"""
 
 
 def call_llm(prompt):
-    """Call the Ollama LLM with retry logic."""
+    """Call local Ollama instance with fallback error safety hooks."""
     payload = {
         "model": MODEL_NAME,
         "prompt": prompt,
         "stream": False,
         "options": {
-            "num_ctx": 4096,
+            "num_ctx": 2048,
             "temperature": 0,
-            "num_predict": 100
+            "num_predict": 30
         }
     }
 
@@ -128,76 +125,37 @@ def call_llm(prompt):
                 json=payload,
                 timeout=300
             )
-
             if response.status_code == 200:
                 return response.json()["response"]
-
         except Exception:
             pass
-
         time.sleep(2)
 
     raise RuntimeError("LLM request failed after retries")
 
 
 def parse_llm_response(response_text):
-    """
-    Parses the LLM output to extract 'true_prediction' and 'true_language'.
-    """
+    """Parses LLM block to safely extract only 'true_prediction'."""
     prediction = ""
-    language = ""
 
-    # Extract prediction
+    # Clean capture of prediction line irrespective of leading/trailing tags
     match_p = re.search(r"true_prediction:\s*(.*)", response_text, re.IGNORECASE)
     if match_p:
         prediction = match_p.group(1).strip()
 
-    # Extract language
-    match_l = re.search(r"true_language:\s*(.*)", response_text, re.IGNORECASE)
-    if match_l:
-        language = match_l.group(1).strip().lower()
-        # Map back to codes
-        if "arabic" in language: 
-            language = "ar"
-        elif "english" in language: 
-            language = "en"
-        elif "french" in language: 
-            language = "fr"
-
-    return prediction, language
+    return prediction
 
 
 def validate_prediction(prediction: str, logger: logging.Logger, lang: str = "en") -> tuple[str, float]:
-    """
-    Validate the LLM's prediction.
+    """Validate prediction strictly against valid items matching the exact source language."""
+    valid_set = ALLOWED_LABELS_BY_LANG.get(lang, ALLOWED_LABELS_BY_LANG["en"])
     
-    Returns:
-        tuple: (validated_label, confidence_score)
-    """
-    # Check if it's a known category
-    if prediction in TOPIC_ALLOWED_LABELS:
+    if prediction in valid_set:
         return prediction, 1.0
     
-    # If not in the predefined list, validate it's a reasonable general term
-    if prediction:
-        # Remove common punctuation
-        cleaned = prediction.strip().strip('.,!?;:')
-        word_count = len(cleaned.split())
-        
-        # Accept if:
-        # 1. Not empty
-        # 2. 1-3 words
-        # 3. Not "Unknown" or similar fallback terms
-        if (word_count >= 1 and 
-            word_count <= 3 and 
-            cleaned.lower() not in ['unknown', 'other', 'none', 'n/a', 'unclear', 'general', 'général', 'عام']):
-            
-            logger.info(f"[LLMTopic] New category suggested: '{cleaned}'")
-            return cleaned, 0.8  # Lower confidence for emergent categories
-    
-    # Fallback
+    # Language fallback fallback initialization
     fallback_label = CATEGORY_DISPLAY[17].get(lang, "General")
-    logger.warning(f"[LLMTopic] Invalid prediction: '{prediction}' - using '{fallback_label}'")
+    logger.warning(f"[LLMTopic] Invalid or language-leaked prediction: '{prediction}' for lang '{lang}' - using fallback: '{fallback_label}'")
     return fallback_label, 0.0
 
 
@@ -206,14 +164,10 @@ def validate_prediction(prediction: str, logger: logging.Logger, lang: str = "en
 # ---------------------------------------------------------------------------
 
 class LLMTopic:
-    def __init__(
-        self,
-        logger: Optional[logging.Logger] = None,
-    ) -> None:
+    def __init__(self, logger: Optional[logging.Logger] = None) -> None:
         self.logger = logger or logging.getLogger(__name__)
 
     def predict(self, text: str, lang: str) -> TopicResult:
-        
         if not text or not text.strip():
             self.logger.warning("[LLMTopic] Received empty text; returning fallback.")
             fallback = CATEGORY_DISPLAY[17].get(lang, "General")
@@ -223,7 +177,6 @@ class LLMTopic:
         if not chunks:
             chunks = [text]
 
-        # Map language code to full name
         lang_map = {"ar": "Arabic", "en": "English", "fr": "French"}
         language = lang_map.get(lang, "English")
 
@@ -232,7 +185,6 @@ class LLMTopic:
             f"(text length={len(text)} chars, lang={lang})"
         )
 
-        # Accumulate scores per label across all chunks
         label_scores: dict[str, float] = {}
         label_counts: dict[str, int]   = {}
 
@@ -240,7 +192,9 @@ class LLMTopic:
             prompt = build_topic_prompt(language, chunk)
             try:
                 response = call_llm(prompt)
-                prediction, _ = parse_llm_response(response)
+                prediction = parse_llm_response(response)
+                
+                # Validate against target isolated map
                 validated_label, score = validate_prediction(prediction, self.logger, lang)
 
                 label_scores[validated_label] = label_scores.get(validated_label, 0.0) + score
@@ -250,7 +204,6 @@ class LLMTopic:
                     f"[LLMTopic] chunk {idx + 1}/{len(chunks)} → "
                     f"label='{validated_label}' score={score:.3f}"
                 )
-
             except Exception as exc:
                 self.logger.warning(
                     f"[LLMTopic] chunk {idx + 1}/{len(chunks)} failed: {exc}"
@@ -261,7 +214,7 @@ class LLMTopic:
             fallback = CATEGORY_DISPLAY[17].get(lang, "General")
             return TopicResult(label=fallback, score=0.0)
 
-        # Winner = majority vote (highest count), with cumulative score as tiebreaker
+        # Vote aggregator execution
         best_label = max(label_counts, key=lambda lbl: (label_counts[lbl], label_scores[lbl]))
         mean_score = label_scores[best_label] / label_counts[best_label]
 
@@ -273,35 +226,5 @@ class LLMTopic:
         return TopicResult(label=best_label, score=mean_score)
 
     def unload(self) -> None:
-        """No-op for LLM-based extractor (no model loaded in memory)."""
+        """No-op execution target wrapper."""
         pass
-
-
-# ---------------------------------------------------------------------------
-# Utility: Get emergent categories from database
-# ---------------------------------------------------------------------------
-
-def get_emergent_categories(session):
-    """
-    Query to find all topic labels that aren't in the original CATEGORY_DISPLAY.
-    Use this in your analytics to track new categories suggested by the LLM.
-    
-    Args:
-        session: SQLAlchemy session
-        
-    Returns:
-        List of tuples: [(category_name, frequency), ...]
-    """
-    # Build the list of known labels for the WHERE clause
-    known_labels = "', '".join(TOPIC_ALLOWED_LABELS)
-    
-    query = f"""
-    SELECT DISTINCT topic_label, COUNT(*) as frequency
-    FROM article_topics
-    WHERE topic_label NOT IN ('{known_labels}')
-    GROUP BY topic_label
-    ORDER BY frequency DESC;
-    """
-    
-    result = session.execute(query)
-    return result.fetchall()

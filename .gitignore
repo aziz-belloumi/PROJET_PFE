@@ -37,3 +37,6 @@ data/*.csv
 
 # Keep directory structure
 !**/.gitkeep
+
+# Cleaned Data folder files (Ignore heavy CSV datasets)
+cleaned_data/*.csv
