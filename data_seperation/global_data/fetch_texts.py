@@ -8,7 +8,7 @@ import torch
 from transformers import AutoTokenizer, AutoModelForSequenceClassification
 
 # Add project root to sys.path
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 sys.path.append(str(PROJECT_ROOT))
 
 from src.db_config import DatabaseConnection

@@ -131,7 +131,7 @@ def call_llm(prompt: str) -> str:
 
     for attempt in range(MAX_RETRIES):
         try:
-            response = requests.post(OLLAMA_URL, json=payload, timeout=300)
+            response = requests.post(OLLAMA_URL, json=payload, timeout=30)
             if response.status_code == 200:
                 return response.json().get("response", "")
         except Exception:

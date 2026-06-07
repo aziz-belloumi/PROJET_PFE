@@ -123,7 +123,7 @@ def call_llm(prompt):
             response = requests.post(
                 OLLAMA_URL,
                 json=payload,
-                timeout=10
+                timeout=20
             )
             if response.status_code == 200:
                 return response.json()["response"]

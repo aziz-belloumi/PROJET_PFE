@@ -7,10 +7,9 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(message)s")
 logger = logging.getLogger()
 
 def main():
-    data_dir = Path(r"c:\Users\bello\Desktop\PROJET_PFE\data_seperation\global_data")
-    output_dir = Path(r"c:\Users\bello\Desktop\PROJET_PFE\data_seperation\check_dialect")
+    output_dir = Path(__file__).parent
     
-    # Define paths
+    # Define paths (all in the same folder as this script)
     acc_pc1 = output_dir / "accepted_articles_pc1.csv"
     acc_pc2 = output_dir / "accepted_articles_pc2.csv"
     rej_pc1 = output_dir / "rejected_articles_pc1.csv"

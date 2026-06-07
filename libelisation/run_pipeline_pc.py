@@ -19,9 +19,9 @@ from src.preprocessing import PreprocessRouter
 
 # ==========================================
 # CONFIGURATION
-# ==========================================
-PC_ID = 1          # Partition identifier: 1, 2, 3, or 4
-NUM_WORKERS = 4    # Number of concurrent workers calling Ollama in parallel
+# ========================================== 
+PC_ID = 5          # Partition identifier: 1, 2, 3, or 4
+NUM_WORKERS = 4   # Number of concurrent workers calling Ollama in parallel
 SAVE_INTERVAL = 100  # Autosave every N articles (INCREASED to reduce save frequency)
 
 # ==========================================

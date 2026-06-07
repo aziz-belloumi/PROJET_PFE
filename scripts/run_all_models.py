@@ -6,6 +6,7 @@ import sys
 import io
 import contextlib
 from sklearn.metrics import classification_report
+import unicodedata
 
 # Force stdout to UTF-8
 if sys.stdout.encoding.lower() != 'utf-8':
@@ -43,9 +44,66 @@ CATEGORY_DISPLAY = {
 def get_topic_labels(lang):
     return [cats[lang] for cats in CATEGORY_DISPLAY.values()]
 
+# --- CANONICAL TOPIC MAPPING HELPERS ---
+def normalize_text(text):
+    if not isinstance(text, str):
+        return ""
+    nfkd_form = unicodedata.normalize('NFKD', text)
+    only_ascii = "".join([c for c in nfkd_form if not unicodedata.combining(c)])
+    return only_ascii.strip().lower()
+
+# Build the pre-built canonical mapping
+TOPIC_CANONICAL_MAP = {}
+for canonical_id, lang_dict in CATEGORY_DISPLAY.items():
+    for lang, val in lang_dict.items():
+        TOPIC_CANONICAL_MAP[normalize_text(val)] = canonical_id
+
+# Synonym/custom overrides
+TOPIC_SYNONYMS = {
+    normalize_text("العدل"): 6,
+    normalize_text("العدالة"): 6,
+}
+for k, v in TOPIC_SYNONYMS.items():
+    TOPIC_CANONICAL_MAP[k] = v
+
+def get_canonical_topic_id(label):
+    if not isinstance(label, str):
+        return -1
+    norm = normalize_text(label)
+    return TOPIC_CANONICAL_MAP.get(norm, -1)
+
 # --- SENTIMENT HELPER ---
-def standardize_sentiment(label):
+MODEL_LABEL_MAP = {
+    'camelbert-msa-sentiment': {'LABEL_0': 'POSITIVE', 'LABEL_1': 'NEGATIVE', 'LABEL_2': 'NEUTRAL'},
+    'camelbert-da-sentiment': {'LABEL_0': 'POSITIVE', 'LABEL_1': 'NEGATIVE', 'LABEL_2': 'NEUTRAL'},
+    'camelbert-mix-sentiment': {'LABEL_0': 'POSITIVE', 'LABEL_1': 'NEGATIVE', 'LABEL_2': 'NEUTRAL'},
+    'AraBert-Arabic-Sentiment-Analysis': {'LABEL_0': 'POSITIVE', 'LABEL_1': 'NEGATIVE', 'LABEL_2': 'NEUTRAL', 'LABEL_3': 'NEUTRAL'},
+    'twitter-roberta-base-sentiment-latest': {'LABEL_0': 'NEGATIVE', 'LABEL_1': 'NEUTRAL', 'LABEL_2': 'POSITIVE'},
+    'sentiment-roberta-large-english-3-classes': {'LABEL_0': 'NEGATIVE', 'LABEL_1': 'NEUTRAL', 'LABEL_2': 'POSITIVE'},
+    'bertweet-base-sentiment-analysis': {'LABEL_0': 'NEGATIVE', 'LABEL_1': 'NEUTRAL', 'LABEL_2': 'POSITIVE'},
+    'distilcamembert-base-sentiment': {'LABEL_0': 'NEGATIVE', 'LABEL_1': 'NEGATIVE', 'LABEL_2': 'NEUTRAL', 'LABEL_3': 'POSITIVE', 'LABEL_4': 'POSITIVE'},
+    'bert-base-multilingual-uncased-sentiment': {'LABEL_0': 'NEGATIVE', 'LABEL_1': 'NEGATIVE', 'LABEL_2': 'NEUTRAL', 'LABEL_3': 'POSITIVE', 'LABEL_4': 'POSITIVE'},
+    'distilcamembert-base-nli': {'LABEL_0': 'NEGATIVE', 'LABEL_1': 'POSITIVE', 'LABEL_2': 'NEUTRAL'},
+    'twitter-xlm-roberta-base-sentiment': {'LABEL_0': 'NEGATIVE', 'LABEL_1': 'NEUTRAL', 'LABEL_2': 'POSITIVE'},
+    'distilbert-base-multilingual-cased-sentiments-student': {'LABEL_0': 'POSITIVE', 'LABEL_1': 'NEUTRAL', 'LABEL_2': 'NEGATIVE'},
+}
+
+def standardize_sentiment(label, model_name=None):
     if not isinstance(label, str): return "NEUTRAL"
+    l_upper = label.upper().strip()
+    
+    # Model-specific mapping for generic sequence labels or custom mappings
+    if l_upper.startswith("LABEL_") and model_name is not None:
+        for pattern, mapping in MODEL_LABEL_MAP.items():
+            if pattern.lower() in model_name.lower():
+                return mapping.get(l_upper, "NEUTRAL")
+                
+    # Specific NLI / custom mappings if raw strings were returned instead of LABEL_x
+    if model_name is not None and 'distilcamembert-base-nli' in model_name.lower():
+        if l_upper == 'CONTRADICTION': return 'NEGATIVE'
+        if l_upper == 'ENTAILMENT': return 'POSITIVE'
+        if l_upper == 'NEUTRAL': return 'NEUTRAL'
+        
     l = label.lower()
     if 'star' in l:
         if '1' in l or '2' in l: return 'NEGATIVE'
@@ -151,10 +209,10 @@ def generate_report_content(df):
         c_low = col_name.lower()
         if any(w in c_low for w in ['arabic', 'arabert', 'camelbert', 'ar_ner', 'camel']):
             return 'AR'
-        if any(w in c_low for w in ['english', 'bertweet', 'roberta-large-ner', 'base-ner', 'large-ner']):
-            return 'EN'
         if any(w in c_low for w in ['french', 'camembert', 'distilcamembert']):
             return 'FR'
+        if any(w in c_low for w in ['english', 'bertweet', 'roberta-large-ner', 'base-ner', 'large-ner']):
+            return 'EN'
         if any(w in c_low for w in ['multi', 'wikineural', 'gliner', 'multilingual']):
             return 'MULTI'
         return 'OTHER'
@@ -348,8 +406,29 @@ def generate_report_content(df):
                     (model_preds != '') &
                     model_preds.notna()
                 )
-                y_true = expected_topic[eval_mask].tolist()
-                y_pred = model_preds[eval_mask].tolist()
+                y_true_raw = expected_topic[eval_mask].tolist()
+                y_pred_raw = model_preds[eval_mask].tolist()
+                
+                # Map to canonical topic IDs (0-17)
+                y_true = [get_canonical_topic_id(yt) for yt in y_true_raw]
+                y_pred = [get_canonical_topic_id(yp) for yp in y_pred_raw]
+                
+                # Warning debug logs for unmapped values
+                unmapped_true = [yt for yt in y_true_raw if get_canonical_topic_id(yt) == -1]
+                unmapped_pred = [yp for yp in y_pred_raw if get_canonical_topic_id(yp) == -1]
+                if unmapped_true:
+                    print(f"    WARNING: Unmapped expected labels: {set(unmapped_true)}")
+                if unmapped_pred:
+                    print(f"    WARNING: Unmapped predicted labels: {set(unmapped_pred)}")
+                
+                # Filter out unmapped pairs
+                valid_pairs = [(yt, yp) for yt, yp in zip(y_true, y_pred) if yt != -1 and yp != -1]
+                if valid_pairs:
+                    y_true, y_pred = zip(*valid_pairs)
+                    y_true, y_pred = list(y_true), list(y_pred)
+                else:
+                    y_true, y_pred = [], []
+                
                 model_name = col.replace('_topic_pred', '')
                 print_classification_metrics(y_true, y_pred, model_name)
 
@@ -570,6 +649,18 @@ def main():
         }
     }
 
+    # Set these to True if you want to force-recompute/overwrite already processed columns in the CSV
+    FORCE_RERUN_TOPIC = False
+    FORCE_RERUN_SENTIMENT = False
+    FORCE_RERUN_NER = True
+
+    # --- HYPOTHESIS TEMPLATES FOR TOPIC MODELING ---
+    HYPOTHESIS_TEMPLATES = {
+        'en': "This news article is about {}.",
+        'fr': "Cet article de presse concerne {}.",
+        'ar': "هذا المقال الإخباري يتحدث عن {}."
+    }
+
     # --- EXECUTION ENGINE ---
     for task_name, lang_dict in tasks.items():
         print(f"\n{'='*20} TASK: {task_name.upper()} {'='*20}")
@@ -583,12 +674,23 @@ def main():
                 if col_name not in df.columns:
                     df[col_name] = None
                 
-                # Condition: only process rows where col_name is NaN, None, empty, or 'nan' string
-                target_indices = df.index[
-                    df[col_name].isna() |
-                    (df[col_name].astype(str).str.strip() == "") |
-                    (df[col_name].astype(str).str.strip().str.lower() == "nan")
-                ].tolist()
+                # Determine which indices need to be processed
+                if (task_name == 'topic' and FORCE_RERUN_TOPIC) or \
+                   (task_name == 'sentiment' and FORCE_RERUN_SENTIMENT) or \
+                   (task_name == 'ner' and FORCE_RERUN_NER):
+                    is_missing = pd.Series(True, index=df.index)
+                else:
+                    is_missing = (
+                        df[col_name].isna() |
+                        (df[col_name].astype(str).str.strip() == "") |
+                        (df[col_name].astype(str).str.strip().str.lower() == "nan")
+                    )
+                    
+                    # Reprocess sentiment: also process rows where the value is 'NEUTRAL' to fix previous mapping errors
+                    if task_name == 'sentiment':
+                        is_missing = is_missing | (df[col_name].astype(str).str.strip().str.upper() == "NEUTRAL")
+                
+                target_indices = df.index[is_missing].tolist()
                 
                 # If lang is specific (ar, en, fr), filter by that language
                 if lang != 'multi':
@@ -607,7 +709,9 @@ def main():
                             try:
                                 row_lang = df.loc[idx, 'langue']
                                 labels = get_topic_labels(row_lang if row_lang in ['ar', 'en', 'fr'] else 'en')
-                                res = pipe(str(df.loc[idx, 'texte'])[:1500], candidate_labels=labels)
+                                hypothesis_lang = row_lang if row_lang in ['ar', 'en', 'fr'] else 'en'
+                                template = HYPOTHESIS_TEMPLATES[hypothesis_lang]
+                                res = pipe(str(df.loc[idx, 'texte'])[:1500], candidate_labels=labels, hypothesis_template=template)
                                 df.loc[idx, col_name] = res['labels'][0]
                             except Exception as e:
                                 print(f"      Row {idx} failed: {e}")
@@ -618,7 +722,7 @@ def main():
                         for idx in target_indices:
                             try:
                                 res = pipe(str(df.loc[idx, 'texte']))[0]
-                                df.loc[idx, col_name] = standardize_sentiment(res['label'])
+                                df.loc[idx, col_name] = standardize_sentiment(res['label'], model_name)
                             except Exception as e:
                                 print(f"      Row {idx} failed: {e}")
                             
