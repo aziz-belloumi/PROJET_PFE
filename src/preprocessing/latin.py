@@ -234,7 +234,6 @@ class LatinPreprocessor:
         text = re.sub(r"\s+\)", ")", text)
         text = re.sub(r"\[\s+", "[", text)
         text = re.sub(r"\s+\]", "]", text)
-        return self.normalize_whitespace(text)
 
         return self.normalize_whitespace(text)
 

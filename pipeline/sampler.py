@@ -70,7 +70,7 @@ def run_sampling(
     # ------------------------------------------------------------------
     preproc = PreprocessRouter(logger=logger)
     detector = FastTextLanguageDetector(
-        model_path=Config.FASTTEXT_MODEL_PATH,
+        model="auto",
         logger=logger,
         preprocessor=None,
     )

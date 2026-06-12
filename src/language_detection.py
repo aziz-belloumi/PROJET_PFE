@@ -27,6 +27,7 @@ class FastTextLanguageDetector:
         # Configure fast_langdetect — disable truncation so we control input length
         config = LangDetectConfig(
             max_input_length=None,  # No truncation, we handle it ourselves
+            model=model,
         )
         self._detector = LangDetector(config)
         self._model = model
@@ -44,8 +45,8 @@ class FastTextLanguageDetector:
             return LanguageDetection(lang="unk", score=0.0, raw_label="__label__unk")
 
         try:
-            # fast_langdetect.detect returns a list of dicts: [{"lang": "fr", "score": 0.99}, ...]
-            results = self._detector.detect(text, model=self._model, k=k)
+            
+            results = self._detector.detect(text, k=k)
             
             if results:
                 top = results[0]

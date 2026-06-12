@@ -20,7 +20,7 @@ def run_ner_comparison(engine):
     Updated for your current multilingual setup.
 
     Key fix vs old code:
-    - Adds language by joining articles_enriched on (article_id, model_version)
+    - Adds language by joining articles_enriched on article_id only
     - Computes agreement ONLY within the same language (otherwise meaningless)
     - Deduplicates entity occurrences per article using (article_id, entity_type, normalized_name)
       and keeps max confidence for that key.
@@ -40,7 +40,6 @@ def run_ner_comparison(engine):
           ON ae.entity_id = e.entity_id
         LEFT JOIN articles_enriched a
           ON a.article_id = ae.article_id
-         AND a.model_version = ae.model_version
     """
     df = pd.read_sql(query, engine)
     logger.info(f"Loaded {len(df)} entity records from DB")

@@ -72,7 +72,7 @@ LATIN_NER_PARAMS: Dict[str, Any] = {
     "normalize_unicode": True,
     # Remove links/mentions/emails entirely (cleaner for NER)
     "standardize_social": False,
-    "handle_hashtags": True,   # "#Ukraine" -> "Ukraine"
+    "handle_hashtags": True,   
     "reduce_repetitions": True,
     "normalize_punct": True,
     "clean_twitter": True,

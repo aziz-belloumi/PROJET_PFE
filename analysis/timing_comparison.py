@@ -4,26 +4,22 @@ import pandas as pd
 logger = logging.getLogger(__name__)
 
 MODEL_NAME_MAP = {
-    0: "arabert",
-    1: "camel",
-    2: "en_bert",
-    3: "fr_bert",
+    0: "unified"
 }
 
 
 def run_timing_comparison(engine) -> pd.DataFrame:
     """
     Reads cpu_processing_time and gpu_processing_time from articles_enriched
-    and computes per-model timing statistics cumulatively across all runs.
+    and computes timing statistics cumulatively across all runs.
 
-    Note: processing times represent NER + Sentiment combined (per model_version).
-    Topic timing is not tracked here (single shared model, not per model_version).
+    Note: processing times represent NER + Sentiment combined and are not tracked per model_version.
+    Topic timing is included if available.
 
-    Output: one row per model_version with CPU/GPU stats and speedup ratio.
+    Output: one aggregated row for the unified pipeline timing.
     """
     query = """
         SELECT
-            model_version,
             cpu_time_ner,
             cpu_time_sentiment,
             cpu_time_topic,
@@ -51,6 +47,8 @@ def run_timing_comparison(engine) -> pd.DataFrame:
 
     df["cpu_sec"] = df[["cpu_time_ner", "cpu_time_sentiment", "cpu_time_topic"]].sum(axis=1, skipna=True)
     df["gpu_sec"] = df[["gpu_time_ner", "gpu_time_sentiment", "gpu_time_topic"]].sum(axis=1, skipna=True)
+
+    df["model_version"] = 0
 
     # If all components are NaN, the sum will be 0.0, which we should revert to NA to avoid skews
     df.loc[df[["cpu_time_ner", "cpu_time_sentiment", "cpu_time_topic"]].isna().all(axis=1), "cpu_sec"] = pd.NA
