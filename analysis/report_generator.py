@@ -82,27 +82,32 @@ def generate_analytics_reports(
     try:
         # 1) Topics distribution by month (GLOBAL)
         topics_month_df = topics_by_month(engine=engine, raw_table=raw_table)
-        topics_path = run_dir / "topics_by_month.csv"
-        topics_month_df.to_csv(topics_path, index=False, encoding="utf-8-sig")
-        logger.info(f"Saved: {topics_path} | rows={len(topics_month_df)}")
+        if topics_month_df.empty:
+            logger.info("topics_by_month returned no rows (no dated topic data yet) — skipping topic CSVs.")
+        else:
+            topics_path = run_dir / "topics_by_month.csv"
+            topics_month_df.to_csv(topics_path, index=False, encoding="utf-8-sig")
+            logger.info(f"Saved: {topics_path} | rows={len(topics_month_df)}")
 
-        # 2) Dominant topic by month (GLOBAL) — what supervisor asked for
-        dom_topics_df = dominant_topic_by_month(engine=engine, raw_table=raw_table)
-        dom_topics_path = run_dir / "dominant_topic_by_month.csv"
-        dom_topics_df.to_csv(dom_topics_path, index=False, encoding="utf-8-sig")
-        logger.info(f"Saved: {dom_topics_path} | rows={len(dom_topics_df)}")
+            # 2) Dominant topic by month (GLOBAL)
+            dom_topics_df = dominant_topic_by_month(engine=engine, raw_table=raw_table)
+            if not dom_topics_df.empty:
+                dom_topics_path = run_dir / "dominant_topic_by_month.csv"
+                dom_topics_df.to_csv(dom_topics_path, index=False, encoding="utf-8-sig")
+                logger.info(f"Saved: {dom_topics_path} | rows={len(dom_topics_df)}")
 
-        # 3) Topic peaks (GLOBAL) — computed from topics_by_month dataframe
-        peaks_df = topic_peaks(
-            topics_by_month_df=topics_month_df,
-            window=peaks_window,
-            z_threshold=peaks_z_threshold,
-            min_periods=3,
-            min_articles_in_month=5,
-        )
-        peaks_path = run_dir / "topic_peaks.csv"
-        peaks_df.to_csv(peaks_path, index=False, encoding="utf-8-sig")
-        logger.info(f"Saved: {peaks_path} | rows={len(peaks_df)}")
+            # 3) Topic peaks (GLOBAL) — computed from topics_by_month dataframe
+            peaks_df = topic_peaks(
+                topics_by_month_df=topics_month_df,
+                window=peaks_window,
+                z_threshold=peaks_z_threshold,
+                min_periods=3,
+                min_articles_in_month=5,
+            )
+            if not peaks_df.empty:
+                peaks_path = run_dir / "topic_peaks.csv"
+                peaks_df.to_csv(peaks_path, index=False, encoding="utf-8-sig")
+                logger.info(f"Saved: {peaks_path} | rows={len(peaks_df)}")
 
         # 4) Entities by month (GLOBAL: no country, no language)
         entities_month_df = entities_by_month(

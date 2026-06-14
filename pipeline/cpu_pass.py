@@ -73,7 +73,7 @@ def run_cpu_pass(
 
     sent_cpu_models_by_lang = {
         lang: [
-            (mv, LLMSentiment(logger=logger, preprocessor=None))
+            (mv, LLMSentiment(logger=logger, preprocessor=None, device=cpu_device))
             for mv, name in models
         ]
         for lang, models in sent_models_by_lang.items()

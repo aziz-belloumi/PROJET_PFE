@@ -13,7 +13,7 @@ from src.db_config import DatabaseConnection
 from src.ner_extraction import TransformersNER, GLiNERNER, DEFAULT_NER_PARAMS, ModelLoadError
 from src.sentiment_analysis import LLMSentiment, DEFAULT_SENTIMENT_PARAMS
 from src.preprocessing import PreprocessRouter
-from src.topic_generation import LLMTopic, CATEGORY_DISPLAY
+from src.topic_generation import LLMTopic
 
 
 # ---------------------------------------------------------------------------
@@ -65,7 +65,7 @@ def _fallback_topic_label(reason: str, lang: str) -> str:
     We return the language-specific 'General' label.
     """
     lang = (lang or "en").strip().lower()
-    return CATEGORY_DISPLAY[17].get(lang, "General")
+    return Config.CATEGORY_DISPLAY[17].get(lang, "General")
 
 
 # ---------------------------------------------------------------------------
@@ -189,7 +189,7 @@ def run_gpu_pass(
     with torch.inference_mode():
         # Load LLM once for all sentiment processing
         logger.info(f"[GPU][SENT] Loading LLM model_version=0: {Config.LLM_MODEL}")
-        sent = LLMSentiment(logger=logger, preprocessor=None)
+        sent = LLMSentiment(logger=logger, preprocessor=None, device=gpu_device)
 
         for r in work_df.itertuples(index=False):
             aid = int(r.id)
@@ -207,12 +207,12 @@ def run_gpu_pass(
     gpu_time_topic_ms: Dict[Tuple[int, int], int] = {}
 
     if not work_df.empty and topic_extractors:
-        min_topic_chars = int(getattr(Config, "TOPIC_MIN_TEXT_CHARS", 30))
-        min_topic_words = int(getattr(Config, "TOPIC_MIN_TEXT_WORDS", 5))
+        min_topic_chars = Config.TOPIC_MIN_TEXT_CHARS
+        min_topic_words = Config.TOPIC_MIN_TEXT_WORDS
 
         # Load LLM once for all topic processing
         logger.info(f"[GPU][TOPIC] Loading LLM model_version=0: {Config.LLM_MODEL}")
-        extractor = LLMTopic(logger=logger)
+        extractor = LLMTopic(logger=logger, device=gpu_device)
 
         for r in work_df.itertuples(index=False):
             aid = int(r.id)

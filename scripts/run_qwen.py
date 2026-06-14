@@ -12,8 +12,13 @@ if sys.stdout.encoding.lower() != 'utf-8':
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.append(str(PROJECT_ROOT))
 
-from src.topic_generation import LLMTopic
-from src.sentiment_analysis import LLMSentiment
+# Add scripts/ directory so qwen package is importable
+SCRIPTS_DIR = Path(__file__).resolve().parent
+if str(SCRIPTS_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPTS_DIR))
+
+from qwen.topic_generation import LLMTopic
+from qwen.sentiment_analysis import LLMSentiment
 
 CSV_NAME = "manual_eval_global.csv"
 CSV_PATH = PROJECT_ROOT / "scripts" / CSV_NAME

@@ -2,8 +2,8 @@
 """
 Topic extraction package.
 
-Exports the LLM-based topic extractor:
-  - LLMTopic : LLM-based topic classifier (qwen2.5:7b via Ollama)
+Exports the Hugging Face zero-shot topic extractor:
+  - LLMTopic : Zero-shot topic classifier (Hugging Face Transformers)
 """
 
 from src.topic_generation import LLMTopic, TopicResult

@@ -62,8 +62,20 @@ class Config:
     ARABERT_NER_MODEL = "hatmimoha/arabic-ner"
     CAMEL_NER_MODEL = "CAMeL-Lab/bert-base-arabic-camelbert-msa-ner"
 
-    # Unified LLM model for both sentiment and topic analysis
-    LLM_MODEL = "qwen2.5:7b"
+    # Unified LLM model config name for Hugging Face multi-model sentiment and topic analysis
+    LLM_MODEL = "HF-Transformers-Multilingual"
+
+    SENTIMENT_MODELS = {
+        "ar": "CAMeL-Lab/bert-base-arabic-camelbert-mix-sentiment",
+        "en": "cardiffnlp/twitter-roberta-base-sentiment-latest",
+        "fr": "cmarkea/distilcamembert-base-sentiment",
+    }
+
+    TOPIC_MODELS = {
+        "ar": "MoritzLaurer/mDeBERTa-v3-base-mnli-xnli",
+        "en": "MoritzLaurer/DeBERTa-v3-large-mnli-fever-anli-ling-wanli",
+        "fr": "MoritzLaurer/mDeBERTa-v3-base-mnli-xnli",
+    }
 
     # English 
     EN_NER_MODEL = "dslim/bert-base-NER"
@@ -79,7 +91,34 @@ class Config:
     # Topic Extraction
     # ========================================
 
-    # Uses the same unified LLM model as sentiment analysis
+    # Multilingual topic category taxonomy (index → {lang: label})
+    CATEGORY_DISPLAY = {
+        0:  {"ar": "السياسة",       "fr": "Politique",      "en": "Politics"},
+        1:  {"ar": "الاقتصاد",      "fr": "Économie",       "en": "Economy"},
+        2:  {"ar": "الأمن",         "fr": "Sécurité",       "en": "Security"},
+        3:  {"ar": "الطاقة",        "fr": "Énergie",        "en": "Energy"},
+        4:  {"ar": "النزاع",        "fr": "Conflit",        "en": "Conflict"},
+        5:  {"ar": "الانتخابات",    "fr": "Élections",      "en": "Elections"},
+        6:  {"ar": "العدالة",       "fr": "Justice",        "en": "Justice"},
+        7:  {"ar": "الصحة",         "fr": "Santé",          "en": "Health"},
+        8:  {"ar": "الطقس",         "fr": "Météo",          "en": "Weather"},
+        9:  {"ar": "الرياضة",       "fr": "Sport",          "en": "Sports"},
+        10: {"ar": "الثقافة",      "fr": "Culture",        "en": "Culture"},
+        11: {"ar": "التعليم",      "fr": "Éducation",      "en": "Education"},
+        12: {"ar": "التكنولوجيا",  "fr": "Technologie",    "en": "Technology"},
+        13: {"ar": "البيئة",       "fr": "Environnement",  "en": "Environment"},
+        14: {"ar": "الدبلوماسية",  "fr": "Diplomatie",     "en": "Diplomacy"},
+        15: {"ar": "الدين",        "fr": "Religion",       "en": "Religion"},
+        16: {"ar": "الهجرة",       "fr": "Migration",      "en": "Migration"},
+        17: {"ar": "عام",          "fr": "Général",        "en": "General"},
+    }
+
+    # Zero-shot NLI hypothesis templates per language
+    HYPOTHESIS_TEMPLATES = {
+        "en": "This news article is about {}.",
+        "fr": "Cet article de presse concerne {}.",
+        "ar": "هذا المقال الإخباري يتحدث عن {}.",
+    }
 
 
     # ========================================
@@ -90,6 +129,17 @@ class Config:
     GPU_DEVICE        = _getenv("GPU_DEVICE",         0,   int)
     GPU_COOLDOWN_SEC  = _getenv("GPU_COOLDOWN_SEC",  1.0,  float)
 
+    # ========================================
+    # Text Chunking
+    # ========================================
+    CHUNK_SIZE        = _getenv("CHUNK_SIZE",         3000, int)
+    CHUNK_OVERLAP     = _getenv("CHUNK_OVERLAP",       400, int)
+
+    # ========================================
+    # Topic Quality Gate
+    # ========================================
+    TOPIC_MIN_TEXT_CHARS = _getenv("TOPIC_MIN_TEXT_CHARS", 30,  int)
+    TOPIC_MIN_TEXT_WORDS = _getenv("TOPIC_MIN_TEXT_WORDS",  5,  int)
 
 
     # ========================================
