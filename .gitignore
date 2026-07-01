@@ -1,0 +1,24 @@
+# Ignore dataset files (CSV) as requested
+*.csv
+
+# Ignore local python virtual environments
+.env/
+venv/
+.venv/
+env/
+
+# Ignore Python caches
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Ignore training outputs, checkpoints, and evaluation plots
+experiments/
+
+# Ignore local IDE and agent workspace settings
+.vscode/
+.idea/
+.claude/
+.agents/
+.ipynb_checkpoints/

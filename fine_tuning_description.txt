@@ -1,0 +1,662 @@
+================================================================================
+  ARABIC NLP FINE-TUNING PROJECT — FULL TECHNICAL DESCRIPTION
+  Tasks: Sentiment Classification | Topic Classification
+================================================================================
+
+Written: 2026-07-01
+Project Root: fine-tuning/
+
+--------------------------------------------------------------------------------
+TABLE OF CONTENTS
+--------------------------------------------------------------------------------
+  1.  Project Overview
+  2.  Dataset
+  3.  Task 1 — Sentiment Classification
+        3.1  Model Selection & Rationale
+        3.2  Label Schema
+        3.3  Hyperparameters (Current Settings)
+        3.4  Training Strategy
+        3.5  Evaluation Strategy
+        3.6  Best Results Achieved
+  4.  Task 2 — Topic Classification
+        4.1  Model Selection & Rationale
+        4.2  Label Schema (18 Categories)
+        4.3  Hyperparameters (Current Settings)
+        4.4  Training Strategy
+        4.5  Class Imbalance Handling
+        4.6  Evaluation Strategy
+        4.7  Best Results Achieved
+  5.  Shared Architecture Decisions
+  6.  Rules & Conditions for Improving Scores
+        6.1  Learning Rate
+        6.2  Epochs
+        6.3  Batch Size & Gradient Accumulation
+        6.4  Warmup & Weight Decay
+        6.5  Data & Dialect Balance
+        6.6  Class Imbalance (Topic)
+        6.7  Precision Mode (fp16 / bf16)
+        6.8  Max Sequence Length
+        6.9  Seed & Reproducibility
+        6.10 When to Stop Experimenting
+  7.  Experiment Tracking & Run Structure
+  8.  How to Run the Full Pipeline
+
+
+================================================================================
+1. PROJECT OVERVIEW
+================================================================================
+
+This project fine-tunes pre-trained Arabic BERT models on two classification
+tasks using a large, multi-dialect Arabic news and social media dataset.
+
+The goal is to build models that generalise well across BOTH:
+  - Modern Standard Arabic (MSA):     formal news, official documents
+  - Arabic Dialects (EGY, LEV, GLF, MGR): informal text, social media
+
+A fixed evaluation set (separate for MSA and Dialect) is held out from the
+beginning and is NEVER used during training. At the end of every run, each
+model is evaluated on BOTH evaluation sets independently, and the scores are
+written to eval_results.json.
+
+The ranking utility (report/report_search.py) scans all completed runs and
+ranks them by average F1 macro across MSA + Dialect, surfacing the best
+checkpoint automatically.
+
+
+================================================================================
+2. DATASET
+================================================================================
+
+File   : fine_tune_data/global_data_merged.csv
+Source : Merged from multiple Arabic NLP corpora covering news articles,
+         social media posts, forum comments, and political texts.
+
+Columns used:
+  - text      : The Arabic sentence or document
+  - language  : Language/dialect tag (msa, egy, lev, glf, mgr, en, fr, ...)
+  - sentiment : Label for Task 1 (NEGATIVE / NEUTRAL / POSITIVE or 0/1/2)
+  - topic     : Label for Task 2 (Arabic category name, English name, or 0–17)
+
+Language filter applied:
+  VALID_LANG = { "msa", "egy", "lev", "glf", "mgr" }
+  - msa : Modern Standard Arabic
+  - egy : Egyptian dialect
+  - lev : Levantine dialect (Syria, Lebanon, Jordan, Palestine)
+  - glf : Gulf dialect (Saudi Arabia, UAE, Kuwait, Qatar)
+  - mgr : Maghrebi dialect (Morocco, Algeria, Tunisia, Libya)
+
+Rows outside these five tags are discarded before any split or training.
+
+
+================================================================================
+3. TASK 1 — SENTIMENT CLASSIFICATION
+================================================================================
+
+Script: fine_tune_arabic_sentiment.py
+
+------------------------------------------------------------------------
+3.1  MODEL SELECTION & RATIONALE
+------------------------------------------------------------------------
+
+Model: CAMeL-Lab/bert-base-arabic-camelbert-mix-sentiment
+       (Hugging Face Hub identifier)
+
+Why this model?
+
+  a) Arabic-native pre-training:
+     CAMeL-BERT was trained exclusively on Arabic text covering MSA and
+     multiple dialects, making it far more effective than multilingual
+     models (mBERT, XLM-R) which dilute capacity across 100+ languages.
+
+  b) Dialect coverage (mix variant):
+     The "mix" variant was pre-trained on a mixture of MSA + dialectal
+     Arabic corpora, giving it cross-dialect generalisation out of the box.
+     This is critical since our evaluation targets both MSA and Dialect sets.
+
+  c) Sentiment head already pre-trained:
+     The "-sentiment" variant carries an existing classification head
+     pre-trained on Arabic sentiment data, reducing the number of fine-tuning
+     steps required to converge and giving better initial loss values.
+
+  d) fp16 stability:
+     CAMeL-BERT (base size) is numerically stable under fp16 on CUDA, unlike
+     larger multilingual models (e.g. mDeBERTa-v3) which suffered overflow
+     losses of 18–21 in early experiments.
+
+  e) Memory efficiency:
+     At ~135M parameters, it comfortably fits on a single GPU with batch
+     accumulation, unlike larger models that require multi-GPU setups or
+     drastically reduced batch sizes.
+
+------------------------------------------------------------------------
+3.2  LABEL SCHEMA
+------------------------------------------------------------------------
+
+3 classes:
+  0 = NEGATIVE
+  1 = NEUTRAL
+  2 = POSITIVE
+
+Labels in the CSV can be either the integer (0, 1, 2) or the string
+("NEGATIVE", "NEUTRAL", "POSITIVE"). The parse_sentiment() function
+handles both formats and discards any ambiguous rows (label = -1).
+
+------------------------------------------------------------------------
+3.3  HYPERPARAMETERS (CURRENT SETTINGS)
+------------------------------------------------------------------------
+
+  MAX_LEN    = 256      Max tokens per input sequence (truncation applied)
+  EPOCHS     = 4        Number of full passes over the training data
+  LR         = 2e-5     Peak learning rate (AdamW optimizer)
+  BATCH_SIZE = 2        Per-device training batch size
+  GRAD_ACCUM = 8        Gradient accumulation steps
+                        --> Effective batch size = 2 * 8 = 16
+  EVAL_STEPS = 2000     Run evaluation every 2000 optimizer steps
+  SEED       = 42       Fixed random seed for reproducibility
+
+  warmup_ratio  = 0.06   6% of total steps used for linear LR warmup
+  weight_decay  = 0.01   L2 regularisation applied to non-bias parameters
+  fp16          = True   Half-precision training (when CUDA is available)
+
+  Eval split:
+    EVAL_MSA_N     = 2000   Fixed MSA evaluation rows (stratified by label)
+    EVAL_DIALECT_N = 2000   Fixed Dialect evaluation rows
+    DIALECT_TRAIN_RATIO = 0.50   Target: 50% dialect rows in training set
+
+------------------------------------------------------------------------
+3.4  TRAINING STRATEGY
+------------------------------------------------------------------------
+
+  - Data is first split into MSA and Dialect subsets.
+  - A fixed 2,000-row stratified evaluation set is extracted from EACH.
+    These sets are NEVER used in training.
+  - Dialect training rows are UPSAMPLED (with repetition) to reach the
+    target 50% dialect ratio in the final training set, preventing the
+    model from becoming MSA-only.
+  - The Hugging Face Trainer handles the training loop with:
+      * AdamW optimizer
+      * Linear learning rate schedule with warmup
+      * Evaluation every EVAL_STEPS steps on the mixed eval set
+      * Best checkpoint is kept based on eval F1 macro
+  - Gradient checkpointing is enabled to reduce VRAM usage on the model
+    directly (not via TrainingArguments, to avoid fp16 interaction bugs).
+
+------------------------------------------------------------------------
+3.5  EVALUATION STRATEGY
+------------------------------------------------------------------------
+
+  Two separate evaluations are run AFTER training ends:
+    1. MSA eval set (2,000 rows)  --> "msa_f1_macro", "msa_accuracy"
+    2. Dialect eval set (2,000 rows) --> "dialect_f1_macro", "dialect_accuracy"
+
+  Both results are written to: experiments/sentiment/<timestamp>/eval_results.json
+
+  Ranking metric used by report_search.py:
+    avg_f1 = (msa_f1_macro + dialect_f1_macro) / 2
+
+------------------------------------------------------------------------
+3.6  BEST RESULTS ACHIEVED
+------------------------------------------------------------------------
+
+  Run:          2026-06-21T07-39-42Z
+  Epochs:       10
+  LR:           1.0e-05
+  MSA F1:       0.8580
+  Dialect F1:   0.8611
+  Avg F1:       0.8596   <-- BEST
+
+
+================================================================================
+4. TASK 2 — TOPIC CLASSIFICATION
+================================================================================
+
+Script: fine_tune_arabic_topic.py
+
+------------------------------------------------------------------------
+4.1  MODEL SELECTION & RATIONALE
+------------------------------------------------------------------------
+
+Model: CAMeL-Lab/bert-base-arabic-camelbert-mix
+       (the base variant, without task-specific head)
+
+Why this model?
+
+  a) Arabic-native, dialect-aware:
+     Same justification as the sentiment model — trained exclusively on
+     Arabic text spanning MSA + multiple dialects.
+
+  b) Base variant (no task head):
+     Topic classification has 18 classes, so a fresh classification head
+     is needed anyway. Using the base model gives maximum flexibility in
+     head design, including the custom WeightedTrainer.
+
+  c) Proven stability:
+     Early topic experiments used mDeBERTa-v3-base (multilingual) and
+     produced training loss values of 18–21 due to fp16 numerical overflow.
+     Switching to CAMeL-BERT eliminated this problem completely.
+
+  d) Lighter memory footprint:
+     BERT-base (~135M params) vs mDeBERTa-v3 (~278M params) allows
+     doubling the batch size (2→8) and enabling gradient checkpointing
+     with no VRAM overflow.
+
+------------------------------------------------------------------------
+4.2  LABEL SCHEMA (18 CATEGORIES)
+------------------------------------------------------------------------
+
+  ID  English Name    Arabic Name
+  --  ------------    -----------
+   0  Politics        السياسة
+   1  Economy         الاقتصاد
+   2  Security        الأمن
+   3  Energy          الطاقة
+   4  Conflict        النزاع
+   5  Elections       الانتخابات
+   6  Justice         العدالة
+   7  Health          الصحة
+   8  Weather         الطقس
+   9  Sports          الرياضة
+  10  Culture         الثقافة
+  11  Education       التعليم
+  12  Technology      التكنولوجيا
+  13  Environment     البيئة
+  14  Diplomacy       الدبلوماسية
+  15  Religion        الدين
+  16  Migration       الهجرة
+  17  General         عام
+
+Labels in the CSV may be Arabic names, English names, or integers (0–17).
+The parse_topic() function normalises and maps all variants.
+The alternative Arabic spelling "العدل" (for Justice) is also handled.
+
+------------------------------------------------------------------------
+4.3  HYPERPARAMETERS (CURRENT SETTINGS)
+------------------------------------------------------------------------
+
+  MAX_LEN    = 512      Longer sequences allowed (topic needs more context)
+  EPOCHS     = 4        Number of full passes over training data
+  LR         = 1e-5     Peak learning rate (lower than sentiment — more classes)
+  BATCH_SIZE = 8        Per-device training batch size (BERT-base is lighter)
+  GRAD_ACCUM = 4        Gradient accumulation steps
+                        --> Effective batch size = 8 * 4 = 32
+  EVAL_STEPS = 500      More frequent evaluation (complex 18-class task)
+  SEED       = 42       Fixed random seed
+
+  warmup_ratio      = 0.15   15% warmup (longer — topic is harder to converge)
+  weight_decay      = 0.1    Stronger regularisation (18 classes, more capacity)
+  label_smoothing   = 0.1    Soft labels to prevent overconfident predictions
+  class_weighted    = True   Inverse-frequency class weights (see Section 4.5)
+  fp16 / bf16       = Auto   bf16 preferred if supported, else fp16, else CPU
+
+  Eval split:
+    EVAL_MSA_N          = 2000
+    EVAL_DIALECT_N      = 2000
+    DIALECT_TRAIN_RATIO = 0.50
+
+------------------------------------------------------------------------
+4.4  TRAINING STRATEGY
+------------------------------------------------------------------------
+
+  Same MSA/Dialect split and upsample strategy as sentiment.
+
+  Key differences from sentiment:
+    - Uses a custom WeightedTrainer subclass that replaces the default
+      CrossEntropyLoss with a class-weighted + label-smoothed version.
+    - Gradient checkpointing is enabled on the model directly (same
+      reason as sentiment: avoids fp16 interaction bugs in Trainer).
+    - save_total_limit=1 (keep only 1 checkpoint) to prevent disk-full
+      crashes given the 18-class model's larger checkpoint files.
+    - Precision is auto-detected: bf16 is preferred over fp16 as it
+      provides wider dynamic range and prevents the overflow losses
+      seen in earlier mDeBERTa runs.
+
+------------------------------------------------------------------------
+4.5  CLASS IMBALANCE HANDLING
+------------------------------------------------------------------------
+
+The topic dataset has severe class imbalance. Example from the data:
+  General (عام):      ~93,678 samples
+  Environment (البيئة): ~825 samples
+  --> 114x imbalance ratio
+
+To address this, two mechanisms work together:
+
+  1. INVERSE-FREQUENCY CLASS WEIGHTS
+     Each class is assigned a weight = 1 / count.
+     Weights are then normalised so the mean weight ≈ 1.0.
+     Weights are CAPPED at 10x the median weight to prevent extreme
+     upweighting of very rare classes from destabilising training.
+     These weights are passed to CrossEntropyLoss, so the model is
+     penalised more for mistakes on rare classes.
+
+  2. LABEL SMOOTHING = 0.1
+     Instead of learning hard 0/1 targets, the model learns softened
+     targets (e.g. 0.9 for correct class, 0.1/17 spread across others).
+     This prevents overconfident predictions on dominant classes and
+     improves generalisation to minority classes.
+
+------------------------------------------------------------------------
+4.6  EVALUATION STRATEGY
+------------------------------------------------------------------------
+
+  Same as sentiment — two independent evaluations after training:
+    1. MSA eval set   --> "msa_f1_macro", "msa_accuracy"
+    2. Dialect eval set --> "dialect_f1_macro", "dialect_accuracy"
+
+  F1 MACRO is the primary metric because it treats all 18 classes
+  equally regardless of their frequency — critical given the 114x
+  imbalance. Accuracy alone would be misleading (a model predicting
+  only "General" would reach ~70% accuracy but near-zero F1 macro).
+
+------------------------------------------------------------------------
+4.7  BEST RESULTS ACHIEVED
+------------------------------------------------------------------------
+
+  Run:          2026-06-28T05-32-52Z
+  Epochs:       5
+  LR:           1.0e-05
+  MSA F1:       0.8227
+  Dialect F1:   0.7662
+  Avg F1:       0.7944   <-- BEST
+
+
+================================================================================
+5. SHARED ARCHITECTURE DECISIONS
+================================================================================
+
+  a) Per-run timestamped directories
+     Every run creates its own folder: experiments/<task>/<timestamp>/
+     This allows unlimited parallel or sequential experiments without
+     overwriting previous results.
+
+  b) hyperparameters.json saved at START of run
+     Even if the run crashes mid-training, the hyperparameters used are
+     already saved on disk. This allows post-hoc analysis of failed runs.
+
+  c) eval_results.json written AFTER training
+     Only written if training completes. The report_search.py scanner
+     treats the presence of this file as the "run completed" signal.
+     Runs without this file are skipped (treated as crashed/in-progress).
+
+  d) load_best_model_at_end = True
+     The Trainer automatically loads the checkpoint with the best eval
+     F1 macro at the end of training, so the saved model is always the
+     best checkpoint — not the last one.
+
+  e) Dual evaluation sets (MSA + Dialect)
+     Evaluating on both sets separately prevents the model from hiding
+     dialect weakness behind strong MSA performance. The ranking metric
+     avg_f1 = (msa_f1 + dialect_f1) / 2 forces balanced performance.
+
+  f) dataloader_num_workers = 0
+     Required on Windows to prevent multiprocessing deadlocks in the
+     PyTorch DataLoader with the Hugging Face Trainer.
+
+
+================================================================================
+6. RULES & CONDITIONS FOR IMPROVING SCORES
+================================================================================
+
+------------------------------------------------------------------------
+6.1  LEARNING RATE
+------------------------------------------------------------------------
+
+RULE: The single most impactful hyperparameter for fine-tuning.
+
+  Best sentiment LR found:    1.0e-05  (Avg F1: 0.8596)
+  Worst sentiment LR tested:  2.0e-05  (Avg F1: 0.8527)
+
+  Best topic LR found:        1.0e-05  (Avg F1: 0.7944)
+  Second best topic LR:       8.0e-06  (Avg F1: 0.7890)
+
+Guidelines:
+  - The safe range for BERT fine-tuning is: [5e-6, 3e-5]
+  - Going BELOW 5e-6 → training is too slow, underfitting risk
+  - Going ABOVE 3e-5 → catastrophic forgetting, the pre-trained
+    knowledge in BERT gets overwritten
+  - For topic (18 classes): lean toward lower LRs (5e-6 to 1.5e-5)
+  - For sentiment (3 classes): can tolerate slightly higher (1e-5 to 2e-5)
+  - Use warmup (warmup_ratio ≥ 0.06) to protect the early steps
+
+------------------------------------------------------------------------
+6.2  EPOCHS
+------------------------------------------------------------------------
+
+RULE: More epochs help up to a point, then overfitting kicks in.
+
+  Evidence from sentiment runs:
+    3 epochs  → Avg F1: 0.8553
+    5 epochs  → Avg F1: 0.8568
+    10 epochs → Avg F1: 0.8596  (BEST)
+    
+  Evidence from topic runs:
+    1 epoch   → Avg F1: 0.7479
+    2 epochs  → Avg F1: 0.7744
+    4 epochs  → Avg F1: 0.7864
+    5 epochs  → Avg F1: 0.7944  (BEST)
+
+Guidelines:
+  - Start with 3–5 epochs. If val loss is still decreasing at end, add more.
+  - If train loss drops but val loss rises → overfitting → stop earlier or
+    reduce LR / increase weight_decay.
+  - load_best_model_at_end=True means extra epochs don't hurt as long as
+    you keep checkpoints — the best intermediate checkpoint is always restored.
+
+------------------------------------------------------------------------
+6.3  BATCH SIZE & GRADIENT ACCUMULATION
+------------------------------------------------------------------------
+
+RULE: Larger effective batch sizes (16–64) generally improve stability
+      and final performance for BERT fine-tuning.
+
+  Current effective batch:
+    Sentiment: 2 * 8 = 16
+    Topic:     8 * 4 = 32
+
+Guidelines:
+  - If you have more VRAM, increase per_device_train_batch_size first
+    before reducing GRAD_ACCUM (real batches > gradient accumulation).
+  - Effective batch < 8 → often unstable gradients, noisy training.
+  - Effective batch > 64 → can work but sometimes hurts generalisation
+    (sharp minima) without special warm-up schedules.
+  - For evaluation, always use BATCH_SIZE * 2 (no backward pass, safe).
+
+------------------------------------------------------------------------
+6.4  WARMUP & WEIGHT DECAY
+------------------------------------------------------------------------
+
+RULE: Warmup protects early training; weight decay prevents overfitting.
+
+  warmup_ratio:
+    - 0.06 (6%) is standard for sentiment (shorter training).
+    - 0.15 (15%) for topic: more complex task needs gentler start.
+    - Increasing warmup generally helps when LR is higher.
+    - If loss spikes in the first few hundred steps → increase warmup.
+
+  weight_decay:
+    - Sentiment: 0.01 (light regularisation, model already pre-trained
+      on sentiment task).
+    - Topic: 0.1 (stronger regularisation, 18 classes, more capacity
+      to overfit).
+    - If eval F1 starts below train F1 significantly → increase
+      weight_decay toward 0.1–0.3.
+
+------------------------------------------------------------------------
+6.5  DATA & DIALECT BALANCE
+------------------------------------------------------------------------
+
+RULE: Dialect ratio in training directly determines dialect F1.
+
+  Current setting: DIALECT_TRAIN_RATIO = 0.50
+  → The training set is forced to be 50% MSA and 50% Dialect.
+
+  If dialect F1 << msa F1:
+    - Increase DIALECT_TRAIN_RATIO to 0.55 or 0.60.
+    - Check if the dialect data has sufficient label diversity.
+    - Increasing dialect ratio may slightly hurt MSA F1 — monitor avg_f1.
+
+  If msa F1 << dialect F1:
+    - Rare, but reduce DIALECT_TRAIN_RATIO to 0.40–0.45.
+
+  Always check: eval sets are fixed and stratified by label, so they
+  fairly represent the label distribution of the original data.
+
+------------------------------------------------------------------------
+6.6  CLASS IMBALANCE (TOPIC ONLY)
+------------------------------------------------------------------------
+
+RULE: For 18-class topic with 114x imbalance, F1 macro is the only
+      reliable metric. Do NOT optimise for accuracy.
+
+  Levers to pull:
+    - Weight cap (currently 10x median):
+      Raising the cap → rarer classes get more attention → may improve
+      minority class F1, but risks training instability.
+      Try: cap at 5x (less aggressive) or 15x (more aggressive).
+
+    - Label smoothing (currently 0.1):
+      Increasing to 0.15–0.2 → softer targets, better calibration.
+      Too high (>0.3) → model becomes confused and underperforms.
+
+    - Oversampling vs weights:
+      Current approach uses class weights in the loss, not oversampling.
+      For extremely rare classes (<500 samples), try oversampling those
+      classes in the training set by a factor of 3–5x.
+
+------------------------------------------------------------------------
+6.7  PRECISION MODE (fp16 / bf16)
+------------------------------------------------------------------------
+
+RULE: Use the best precision mode your hardware supports.
+
+  bf16 (bfloat16):
+    - Preferred. Wider dynamic range than fp16, no overflow risk.
+    - Available on: NVIDIA Ampere (RTX 30xx, A100) and newer.
+    - Auto-detected by the training script.
+
+  fp16 (half precision):
+    - Fallback if bf16 is not available.
+    - Risk: gradient overflow on very deep architectures (mDeBERTa).
+    - For BERT-base: stable.
+    - If loss goes to NaN → disable fp16, use full precision (fp32).
+
+  fp32 (CPU or CUDA without half precision):
+    - Slow but safe. Use only for debugging.
+
+------------------------------------------------------------------------
+6.8  MAX SEQUENCE LENGTH
+------------------------------------------------------------------------
+
+RULE: Shorter sequences = faster training but more truncation.
+
+  Sentiment: MAX_LEN = 256
+    → Most Arabic news headlines and social media posts fit in 256 tokens.
+    → Increasing to 512 would double VRAM usage per batch with minimal gain.
+
+  Topic: MAX_LEN = 512
+    → Topic classification often requires more context (whole article vs
+      headline). 512 allows full BERT context window.
+    → If VRAM is tight, reduce to 256 and check if F1 drops significantly.
+
+------------------------------------------------------------------------
+6.9  SEED & REPRODUCIBILITY
+------------------------------------------------------------------------
+
+  SEED = 42 is fixed across all runs.
+  - Controls: data split randomness, model weight initialisation,
+    dropout, data loader shuffling.
+  - To test if a result is robust or just lucky, try running the same
+    hyperparameters with SEED = 0, 1, 123 and average the scores.
+  - A difference of >0.005 avg_f1 between identical configs with different
+    seeds indicates high variance — the model is sensitive to initialisation.
+
+------------------------------------------------------------------------
+6.10 WHEN TO STOP EXPERIMENTING
+------------------------------------------------------------------------
+
+CONDITIONS that signal you have found a good model:
+
+  Sentiment:
+    - avg_f1 > 0.87 and neither msa_f1 nor dialect_f1 drops below 0.85
+    - Training loss and eval loss converge (no divergence on learning curve)
+    - Results are consistent across 2–3 seeds
+
+  Topic:
+    - avg_f1 > 0.82 (18-class problem — this is strong performance)
+    - Minority class F1 (Environment, Migration, Weather) > 0.60
+    - The gap between msa_f1 and dialect_f1 is < 0.07
+
+  RED FLAGS — signs you need to change something:
+    - Training loss decreases but eval F1 does NOT improve → overfitting
+    - Eval loss increases after epoch 2 → reduce LR or add weight_decay
+    - Dialect F1 >> MSA F1 by >0.05 → model is dialect-biased, reduce ratio
+    - F1 macro is high but specific classes always predicted wrong → review
+      class weights or add targeted oversampling for those classes
+
+
+================================================================================
+7. EXPERIMENT TRACKING & RUN STRUCTURE
+================================================================================
+
+Each completed training run produces the following folder structure:
+
+  experiments/
+    <task>/                        (sentiment | topic)
+      <YYYY-MM-DDTHH-MM-SSZ>/      (UTC timestamp of run start)
+        hyperparameters.json       Parameters logged at RUN START
+        eval_results.json          MSA + Dialect scores (written after training)
+        model.safetensors          Best model weights
+        config.json                Model architecture config
+        tokenizer.json             Tokenizer vocabulary
+        tokenizer_config.json      Tokenizer settings
+        training_args.bin          Hugging Face TrainingArguments binary
+        checkpoint-XXXX/           Periodic checkpoint(s) kept by Trainer
+        plots/
+          train_loss.png           Training loss curve
+          eval_loss.png            Evaluation loss curve
+          eval_f1_accuracy.png     F1 macro + accuracy (dual axis)
+          learning_curve.png       Train vs Eval loss overlay
+        test_runs/                 Created by test scripts
+          <test_timestamp>/
+            results.csv            Per-sentence inference output
+            summary.json           Label counts + all results
+
+Ranking is handled by: report/report_search.py
+  - Scans both tasks automatically
+  - Skips incomplete runs (no eval_results.json)
+  - Ranks by avg_f1 (default), shows top 5 per task
+  - Exposes find_best_run(task, metric) API for test scripts
+
+
+================================================================================
+8. HOW TO RUN THE FULL PIPELINE
+================================================================================
+
+Step 1: Fine-tune the sentiment model
+  python fine_tune_arabic_sentiment.py
+
+Step 2: Fine-tune the topic model
+  python fine_tune_arabic_topic.py
+
+Step 3: View experiment rankings (both tasks, top 5 each)
+  python report/report_search.py
+
+  Options:
+    --task    sentiment | topic | all   (default: all)
+    --metric  avg_f1 | msa_f1 | dialect_f1 | avg_accuracy  (default: avg_f1)
+    --limit   N   (default: 5, number of runs to show)
+
+Step 4: Test the best sentiment model
+  python test/test_sentiment.py
+
+Step 5: Test the best topic model
+  python test/test_topic.py
+
+  Both test scripts:
+    - Automatically find the best run via report/report_search.py
+    - Load the model and run inference on Arabic test sentences
+    - Save results.csv and summary.json in the best run's test_runs/ folder
+
+================================================================================
+END OF DOCUMENT
+================================================================================

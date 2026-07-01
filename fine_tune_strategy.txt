@@ -1,0 +1,20 @@
+Best strategy for fine-tuning Transformer classifiers (sentiment/topic) on your kind of data:
+
+Data first
+Clean obvious artefacts (prefix/suffix, metadata), normalize labels, deduplicate near-duplicates.
+Split by document ID/source/time if possible (avoid train/test leakage by duplicates).
+Use 3 splits (always)
+Train: most data
+Validation: small but representative (2k–10k is enough) used for early stopping/model selection
+Test: fixed, never touched until the end
+Balance what matters
+If you care about dialect, ensure validation is MSA vs Dialect balanced, and training batches aren’t dominated by one variant (oversample minority or downsample majority).
+Two-stage training (best when labels are noisy / mixed quality)
+Stage A: train on the big 300k (even if weak/noisy labels) for 1–2 epochs.
+Stage B: continue training (“fine-tune the fine-tune”) on a smaller high-quality curated set (manual or high-confidence) with lower LR.
+Stable training recipe
+Start with max_len 256, 2 epochs, LR ~2e-5, fp16, grad accumulation, gradient checkpointing.
+Track macro-F1 (not just accuracy), and per-group metrics (MSA/Dialect).
+Pick the right base
+Topic: start from an NLI-trained backbone (good semantics), then train a normal 18-class head.
+Sentiment: start from a sentiment-pretrained backbone (like you did), then adapt to your domain/dialect.

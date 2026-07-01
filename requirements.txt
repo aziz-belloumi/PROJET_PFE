@@ -1,0 +1,15 @@
+# Core deep learning libraries
+torch
+transformers
+datasets
+accelerate
+
+# Data processing and analysis
+pandas
+numpy
+matplotlib
+scikit-learn
+
+# Arabic terminal display support for test scripts (optional)
+arabic-reshaper
+python-bidi
