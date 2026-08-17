@@ -138,7 +138,7 @@ def validate_prediction(prediction: str, logger: logging.Logger, lang: str = "en
 
     # Language fallback initialization
     fallback_label = CATEGORY_DISPLAY[17].get(lang, "General")
-    logger.warning(
+    logger.debug(
         f"[LLMTopic] Invalid or language-leaked prediction: '{prediction}' "
         f"for lang '{lang}' - using fallback: '{fallback_label}'"
     )

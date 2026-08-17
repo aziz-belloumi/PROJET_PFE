@@ -21,4 +21,4 @@ The Qwen benchmark is intentionally lightweight: the script starts an Ollama-sty
 python scripts/ressources/master_benchmark.py
 ```
 
-The generated CSV is stored in this directory as `resource_usage_report.csv`.
+In the full pipeline, benchmark results are saved directly to the database in the `benchmark_results` table.

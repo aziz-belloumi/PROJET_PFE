@@ -1,17 +1,38 @@
 import time
 import logging
 import pandas as pd
+from tqdm import tqdm
+
 from src.config import Config
 from src.db_config import DatabaseConnection
 
 from .sentiment_extraction import LLMSentiment
 from .topic_extraction import LLMTopic
 
-def run_qwen_pass(work_df: pd.DataFrame, db: DatabaseConnection, logger: logging.Logger):
+def run_qwen_pass(
+    work_df: pd.DataFrame,
+    db: DatabaseConnection,
+    logger: logging.Logger,
+    skipped_df: pd.DataFrame | None = None,
+):
     """
     Runs Qwen (Ollama) on the sampled articles for Sentiment and Topic extraction.
     Updates the results in the dedicated Qwen database tables.
     """
+    if skipped_df is not None and not skipped_df.empty:
+        for r in skipped_df.itertuples(index=False):
+            aid = int(r.id)
+            db.upsert_qwen_articles_enriched(
+                article_id=aid,
+                language=None,
+                sentiment_label="SKIPPED",
+            )
+            db.upsert_qwen_article_topic(
+                article_id=aid,
+                topic_label="SKIPPED",
+                confidence_score=None,
+            )
+
     if work_df.empty:
         return
 
@@ -26,9 +47,16 @@ def run_qwen_pass(work_df: pd.DataFrame, db: DatabaseConnection, logger: logging
 
     model_id = Config.MODEL_ID_MAP.get(Config.QWEN_BENCHMARK_MODEL, 7)
 
-    for r in work_df.itertuples(index=False):
+    pbar = tqdm(
+        work_df.itertuples(index=False),
+        total=len(work_df),
+        desc="[QWEN] Inference",
+        unit="art",
+    )
+    for r in pbar:
         aid = int(r.id)
         lang = str(r.lang)
+        pbar.set_postfix({"id": aid, "lang": lang})
         
         # 1. Sentiment
         t0 = time.perf_counter()

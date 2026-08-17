@@ -26,7 +26,9 @@ main.py
   |-- STAGE 1 - pipeline/sampler.py
   |     |-- Fetch N unprocessed articles from article table
   |     |     (WHERE sentiment_label IS NULL in articles_enriched)
-  |     |-- Language detection via fast-langdetect (fastText)
+  |     |-- Language detection via fast-langdetect (FastText lid.176.bin)
+  |     |     \-- top-5 predictions, combined Arabic dialect confidence,
+  |     |         arabic_ratio Unicode fallback, ARABIC_LANG_CODES label mapping
   |     |-- Filter: supported langs [ar, en, fr] + score >= 0.51
   |     |     \-- Unsupported / low-score -> SKIPPED (language = NULL)
   |     |-- Preprocess text for NER / sentiment / topic
@@ -177,7 +179,12 @@ PROJET_PFE/
 |   |-- ner_extraction.py          # GLiNER + TransformersNER wrappers
 |   |-- sentiment_extraction.py    # LLMSentiment - per-language BERT pipeline wrapper
 |   |-- topic_extraction.py        # TransformerTopic + LLMTopic wrappers
-|   |-- language_detection.py      # fast-langdetect wrapper
+|   |-- language_detection.py      # FastText language detection
+  |   |                            #   FastTextLanguageDetector: top-5 predictions, combined Arabic
+  |   |                            #   dialect confidence (ARABIC_LANG_CODES, 33 codes), arabic_ratio
+  |   |                            #   Unicode fallback, LanguageDetection dataclass
+  |   \                            #   ArticleClassifier: full ar/en/fr/rejected routing with
+  |                                #   word-count guard, latin validity check, _reject() helper
 |   |-- text_utils.py              # Arabic console reshaping (arabic_reshaper + python-bidi)
 |   \-- preprocessing/
 |       |-- router.py              # Routes text to Arabic or Latin preprocessor

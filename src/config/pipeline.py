@@ -9,12 +9,12 @@ from .base import getenv
 
 
 class PipelineConfig:
-    SAMPLE_SIZE = getenv("SAMPLE_SIZE", 10, int)
+    SAMPLE_SIZE = getenv("SAMPLE_SIZE", 100, int)
 
-    RUN_NER = getenv("RUN_NER", True, bool)
-    RUN_SENTIMENT = getenv("RUN_SENTIMENT", True, bool)
-    RUN_TOPIC = getenv("RUN_TOPIC", True, bool)
-    RUN_QWEN = getenv("RUN_QWEN", False, bool)
+    RUN_NER = getenv("RUN_NER", False, bool)
+    RUN_SENTIMENT = getenv("RUN_SENTIMENT", False, bool)
+    RUN_TOPIC = getenv("RUN_TOPIC", False, bool)
+    RUN_QWEN = getenv("RUN_QWEN", True, bool)
     GENERATE_REPORTS = getenv("GENERATE_REPORTS", False, bool)
 
     LANG_THRESHOLD = getenv("LANG_THRESHOLD", 0.51, float)

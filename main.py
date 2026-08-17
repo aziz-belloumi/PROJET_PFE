@@ -169,7 +169,11 @@ def main():
     # ================================================================
     # STAGE 3 — GPU Inference + DB Writes
     # ================================================================
-    if not torch.cuda.is_available():
+    if not (Config.RUN_NER or Config.RUN_SENTIMENT or Config.RUN_TOPIC):
+        logger.info("BERT models disabled (RUN_NER=False, RUN_SENTIMENT=False, RUN_TOPIC=False) → GPU pass skipped.")
+        sent_results_buffer  = {}
+        topic_results_buffer = {}
+    elif not torch.cuda.is_available():
         logger.warning("CUDA not available → GPU pass skipped.")
         sent_results_buffer  = {}
         topic_results_buffer = {}
@@ -201,7 +205,7 @@ def main():
     if Config.RUN_QWEN:
         try:
             from src.qwen.run_qwen_pass import run_qwen_pass
-            run_qwen_pass(work_df, db, logger)
+            run_qwen_pass(work_df, db, logger, skipped_df=skipped_df)
         except Exception as e:
             logger.error(f"Failed to run Qwen pass: {e}")
 

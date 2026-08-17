@@ -31,9 +31,6 @@ CSV_CANDIDATES = [
     PROJECT_ROOT / "scripts" / "manual_eval_global.csv",
     PROJECT_ROOT / "manual_eval_global.csv",
 ]
-OUTPUT_DIR = PROJECT_ROOT / "scripts" / "ressources"
-OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-REPORT_FILE = OUTPUT_DIR / "resource_usage_report.csv"
 
 
 def get_topic_labels(lang: str) -> List[str]:
@@ -196,9 +193,8 @@ def main():
                 res = benchmark_item(task, model, lang, device, df)
                 if res:
                     final_results.append(res)
-                    pd.DataFrame(final_results).to_csv(REPORT_FILE, index=False)
 
-    print(f"\nAll benchmarks completed. Report saved to {REPORT_FILE}")
+    print("\nAll benchmarks completed.")
 
 
 if __name__ == "__main__":

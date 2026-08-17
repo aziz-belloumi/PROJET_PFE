@@ -1,1 +1,0 @@
-device,task,model,lang,load_time_sec,total_inf_time_sec,avg_ms_per_doc,peak_cpu_mb,peak_gpu_mb
