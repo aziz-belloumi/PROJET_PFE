@@ -14,33 +14,7 @@ from analysis.top_entities_by_country import top_entities_by_country
 from analysis.entities_by_month import entities_by_month
 from analysis.topic_peaks import topic_peaks
 
-from analysis.sentiment_comparison import run_sentiment_comparison
-
 logger = logging.getLogger(__name__)
-
-
-def _setup_comparison_logger(run_dir: Path) -> logging.Logger:
-    comp_logger = logging.getLogger("comparison")
-
-    level = getattr(Config, "LOG_LEVEL", "INFO")
-    if isinstance(level, str):
-        level = logging._nameToLevel.get(level.upper(), logging.INFO)
-
-    comp_logger.setLevel(level)
-
-    # Reset handlers to avoid duplicate logs when called multiple times
-    comp_logger.handlers.clear()
-    comp_logger.propagate = False
-
-    fmt = logging.Formatter(
-        getattr(Config, "LOG_FORMAT", "%(asctime)s [%(levelname)s] %(name)s: %(message)s"),
-        datefmt=getattr(Config, "LOG_DATE_FORMAT", "%Y-%m-%d %H:%M:%S"),
-    )
-
-    ch = logging.StreamHandler()
-    ch.setFormatter(fmt)
-    comp_logger.addHandler(ch)
-    return comp_logger
 
 
 def generate_analytics_reports(
@@ -128,38 +102,5 @@ def generate_analytics_reports(
     return run_dir
 
 
-def generate_comparison_report(
-    run_dir: Union[str, Path] = "analysis/reports",
-) -> Path:
-    """
-    Generates model comparison report (Sentiment).
-    """
-    run_dir = Path(run_dir)
-    run_dir.mkdir(parents=True, exist_ok=True)
-
-    comp_logger = _setup_comparison_logger(run_dir)
-    comp_logger.info(f"Comparison output directory: {run_dir.resolve()}")
-
-    db = DatabaseConnection(logger=comp_logger)
-    engine = db.get_engine()
-
-    # ---- Sentiment ----
-    try:
-        comp_logger.info("Running sentiment comparison...")
-        sent_df = run_sentiment_comparison(engine)
-        if not sent_df.empty:
-            out_path = run_dir / "sentiment_comparison.csv"
-            sent_df.to_csv(out_path, index=False, encoding="utf-8-sig")
-            comp_logger.info(f"Sentiment comparison report saved to {out_path.name}")
-        else:
-            comp_logger.warning("Sentiment comparison DataFrame is empty.")
-    except Exception as e:
-        comp_logger.exception(f"Sentiment comparison failed: {e}")
-
-    db.close()
-    comp_logger.info("Comparison report generation finished.")
-    return run_dir
-
-
 if __name__ == "__main__":
-    generate_comparison_report()
+    generate_analytics_reports("analysis/reports")

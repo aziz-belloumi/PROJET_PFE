@@ -45,7 +45,7 @@ main.py
   |     \-- Ollama HTTP -> qwen_articles_enriched, qwen_article_topics
   |
   \-- STAGE 4 - analysis/report_generator.py  (optional)
-        \-- CSV reports: entity trends, topic peaks, sentiment comparison
+        \-- CSV reports: entity trends, topic peaks, dominant topics
 `
 
 ---
@@ -205,8 +205,7 @@ PROJET_PFE/
 |   |-- entities_by_month.py       # Top entities per month
 |   |-- top_entities_by_country.py # Top entities per country
 |   |-- topics_by_month.py         # Topic distribution over time
-|   |-- topic_peaks.py             # Z-score spike detection on topic shares
-|   \-- sentiment_comparison.py   # BERT vs Qwen sentiment agreement
+|   \-- topic_peaks.py             # Z-score spike detection on topic shares
 |
 \-- scripts/                      # Standalone utilities
     \-- ressources/
@@ -238,7 +237,7 @@ PROJET_PFE/
 
 4. Qwen Pass (optional, RUN_QWEN = True in main.py): sends the same preprocessed texts to a local Ollama server for independent sentiment + topic prediction stored in qwen_* tables.
 
-5. Analytics (optional, GENERATE_REPORTS = True in main.py): aggregates DB results to produce trend and comparison CSVs in analysis/reports/.
+5. Analytics (optional, GENERATE_REPORTS = True in main.py): aggregates DB results to produce entity and topic trend CSVs in analysis/reports/.
 
 ---
 

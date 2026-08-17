@@ -29,7 +29,7 @@ from src.topic_extraction import LLMTopic
 from pipeline.sampler  import run_sampling
 from pipeline.gpu_pass import run_gpu_pass
 
-from analysis.report_generator   import generate_analytics_reports, generate_comparison_report
+from analysis.report_generator import generate_analytics_reports
 
 
 # ---------------------------------------------------------------------------
@@ -229,14 +229,6 @@ def main():
             logger.info("Analytics CSVs generated in analysis/reports.")
         except Exception as e:
             logger.error(f"Analytics report failed: {e}")
-
-        try:
-            generate_comparison_report(
-                run_dir=reports_dir,
-            )
-            logger.info("Comparison reports generated in analysis/reports.")
-        except Exception as e:
-            logger.error(f"Comparison report failed: {e}")
 
     # ================================================================
     # STAGE 5 — Global Entity Frequencies
