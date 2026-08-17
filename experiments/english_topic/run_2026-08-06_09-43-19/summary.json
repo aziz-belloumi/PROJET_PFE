@@ -1,0 +1,44 @@
+{
+  "experiment_name": "run_2026-08-06_09-43-19",
+  "model_name": "roberta-base",
+  "model_type": "optimized",
+  "status": "completed",
+  "completed_at": "2026-08-06T19:39:58.537946",
+  "metrics": {
+    "train": {
+      "accuracy": 0.917474304546978,
+      "f1_macro": 0.9206933511481807,
+      "f1_weighted": 0.9177475253528921
+    },
+    "validation": {
+      "accuracy": 0.8245192307692307,
+      "f1_macro": 0.787756853154709,
+      "f1_weighted": 0.825136454077765
+    },
+    "test": {
+      "accuracy": 0.8272025939177102,
+      "f1_macro": 0.7869540683055941,
+      "f1_weighted": 0.8278985393875712
+    }
+  },
+  "resumed_from": null,
+  "files": {
+    "hyperparameters": "C:\\Users\\bello\\Desktop\\fine-tuning\\experiments\\english_topic_optimized\\run_2026-08-06_09-43-19\\results\\hyperparameters.json",
+    "metrics": "C:\\Users\\bello\\Desktop\\fine-tuning\\experiments\\english_topic_optimized\\run_2026-08-06_09-43-19\\results\\all_metrics.json",
+    "classification_report": "C:\\Users\\bello\\Desktop\\fine-tuning\\experiments\\english_topic_optimized\\run_2026-08-06_09-43-19\\results\\classification_report.json",
+    "confusion_matrix_csv": "C:\\Users\\bello\\Desktop\\fine-tuning\\experiments\\english_topic_optimized\\run_2026-08-06_09-43-19\\results\\confusion_matrix.csv",
+    "confusion_matrix_plots": {
+      "train_raw": "C:\\Users\\bello\\Desktop\\fine-tuning\\experiments\\english_topic_optimized\\run_2026-08-06_09-43-19\\plots\\confusion_matrix_raw_train.png",
+      "train_norm": "C:\\Users\\bello\\Desktop\\fine-tuning\\experiments\\english_topic_optimized\\run_2026-08-06_09-43-19\\plots\\confusion_matrix_norm_train.png",
+      "validation_raw": "C:\\Users\\bello\\Desktop\\fine-tuning\\experiments\\english_topic_optimized\\run_2026-08-06_09-43-19\\plots\\confusion_matrix_raw_validation.png",
+      "validation_norm": "C:\\Users\\bello\\Desktop\\fine-tuning\\experiments\\english_topic_optimized\\run_2026-08-06_09-43-19\\plots\\confusion_matrix_norm_validation.png",
+      "test_raw": "C:\\Users\\bello\\Desktop\\fine-tuning\\experiments\\english_topic_optimized\\run_2026-08-06_09-43-19\\plots\\confusion_matrix_raw_test.png",
+      "test_norm": "C:\\Users\\bello\\Desktop\\fine-tuning\\experiments\\english_topic_optimized\\run_2026-08-06_09-43-19\\plots\\confusion_matrix_norm_test.png"
+    },
+    "predictions": "C:\\Users\\bello\\Desktop\\fine-tuning\\experiments\\english_topic_optimized\\run_2026-08-06_09-43-19\\results\\predictions.csv",
+    "training_curves": "C:\\Users\\bello\\Desktop\\fine-tuning\\experiments\\english_topic_optimized\\run_2026-08-06_09-43-19\\plots",
+    "best_model": "C:\\Users\\bello\\Desktop\\fine-tuning\\experiments\\english_topic_optimized\\run_2026-08-06_09-43-19\\best_model",
+    "checkpoints": "C:\\Users\\bello\\Desktop\\fine-tuning\\experiments\\english_topic_optimized\\run_2026-08-06_09-43-19\\checkpoints",
+    "logs": "C:\\Users\\bello\\Desktop\\fine-tuning\\experiments\\english_topic_optimized\\run_2026-08-06_09-43-19\\logs"
+  }
+}

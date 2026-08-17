@@ -1,0 +1,20 @@
+{
+  "msa": {
+    "msa_loss": 0.08887507021427155,
+    "msa_accuracy": 0.824,
+    "msa_f1_macro": 0.8017335616932081,
+    "msa_runtime": 13.8807,
+    "msa_samples_per_second": 144.085,
+    "msa_steps_per_second": 9.005,
+    "epoch": 1.9944315471204397
+  },
+  "dialect": {
+    "dialect_loss": 0.07991360872983932,
+    "dialect_accuracy": 0.7945,
+    "dialect_f1_macro": 0.748314006475972,
+    "dialect_runtime": 9.044,
+    "dialect_samples_per_second": 221.141,
+    "dialect_steps_per_second": 13.821,
+    "epoch": 1.9944315471204397
+  }
+}

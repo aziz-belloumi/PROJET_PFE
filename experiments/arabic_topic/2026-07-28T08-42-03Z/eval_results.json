@@ -1,0 +1,29 @@
+{
+  "msa": {
+    "msa_loss": 0.16965216398239136,
+    "msa_accuracy": 0.8612938186710517,
+    "msa_f1_macro": 0.8523024198090904,
+    "msa_runtime": 416.0277,
+    "msa_samples_per_second": 128.636,
+    "msa_steps_per_second": 8.04,
+    "epoch": 8.974044302632386
+  },
+  "dialect": {
+    "dialect_loss": 0.14766763150691986,
+    "dialect_accuracy": 0.8427270361696592,
+    "dialect_f1_macro": 0.8058864810056511,
+    "dialect_runtime": 381.838,
+    "dialect_samples_per_second": 201.29,
+    "dialect_steps_per_second": 12.581,
+    "epoch": 8.974044302632386
+  },
+  "test": {
+    "test_loss": 0.14723393321037292,
+    "test_accuracy": 0.8510703575017066,
+    "test_f1_macro": 0.8380212708206246,
+    "test_runtime": 796.7488,
+    "test_samples_per_second": 163.636,
+    "test_steps_per_second": 10.228,
+    "epoch": 8.974044302632386
+  }
+}

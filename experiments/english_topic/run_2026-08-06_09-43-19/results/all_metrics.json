@@ -1,0 +1,422 @@
+{
+  "run_id": "run_2026-08-06_09-43-19",
+  "timestamp": "2026-08-06T19:37:04.538983",
+  "model": "roberta-base",
+  "model_type": "roberta-base-optimized",
+  "num_labels": 18,
+  "data_split": {
+    "train_size": 143218,
+    "val_size": 17902,
+    "test_size": 17903
+  },
+  "train_metrics": {
+    "accuracy": 0.917474304546978,
+    "precision_macro": 0.8911098905775329,
+    "recall_macro": 0.9543223726952158,
+    "f1_macro": 0.9206933511481807,
+    "f1_weighted": 0.9177475253528921,
+    "per_class": {
+      "Conflict": {
+        "precision": 0.8180560678716341,
+        "recall": 0.8874549819927972,
+        "f1-score": 0.8513435700575815,
+        "support": 9996.0
+      },
+      "Culture": {
+        "precision": 0.8424633011099176,
+        "recall": 0.9561154002438034,
+        "f1-score": 0.8956985154168253,
+        "support": 2461.0
+      },
+      "Diplomacy": {
+        "precision": 0.7612193056731583,
+        "recall": 0.9708423326133909,
+        "f1-score": 0.8533459895586142,
+        "support": 926.0
+      },
+      "Economy": {
+        "precision": 0.9225589225589226,
+        "recall": 0.9538729329852045,
+        "f1-score": 0.9379546427043218,
+        "support": 6894.0
+      },
+      "Education": {
+        "precision": 0.8764607679465777,
+        "recall": 0.9764414135151891,
+        "f1-score": 0.9237536656891495,
+        "support": 1613.0
+      },
+      "Elections": {
+        "precision": 0.8954423592493298,
+        "recall": 0.9780380673499268,
+        "f1-score": 0.9349195241427571,
+        "support": 2049.0
+      },
+      "Energy": {
+        "precision": 0.8312159709618875,
+        "recall": 0.9224572004028198,
+        "f1-score": 0.8744630071599045,
+        "support": 993.0
+      },
+      "Environment": {
+        "precision": 0.9024390243902439,
+        "recall": 0.9736842105263158,
+        "f1-score": 0.9367088607594937,
+        "support": 228.0
+      },
+      "General": {
+        "precision": 0.9653996787918063,
+        "recall": 0.8928701725126388,
+        "f1-score": 0.9277194882556015,
+        "support": 38374.0
+      },
+      "Health": {
+        "precision": 0.9056791763533709,
+        "recall": 0.9873280231716147,
+        "f1-score": 0.944742768058202,
+        "support": 2762.0
+      },
+      "Justice": {
+        "precision": 0.9008115419296664,
+        "recall": 0.9741589468551926,
+        "f1-score": 0.9360505973295854,
+        "support": 2051.0
+      },
+      "Migration": {
+        "precision": 0.8860640301318268,
+        "recall": 0.9832810867293625,
+        "f1-score": 0.9321446260525013,
+        "support": 1914.0
+      },
+      "Politics": {
+        "precision": 0.9223290089383284,
+        "recall": 0.9061054833737062,
+        "f1-score": 0.914145271255398,
+        "support": 36328.0
+      },
+      "Religion": {
+        "precision": 0.8989226869455006,
+        "recall": 0.9603926878808395,
+        "f1-score": 0.9286415711947626,
+        "support": 2954.0
+      },
+      "Security": {
+        "precision": 0.9125039436323483,
+        "recall": 0.9225289718963745,
+        "f1-score": 0.917489073734668,
+        "support": 28217.0
+      },
+      "Sports": {
+        "precision": 0.9430992736077481,
+        "recall": 0.9617283950617284,
+        "f1-score": 0.9523227383863081,
+        "support": 1620.0
+      },
+      "Technology": {
+        "precision": 0.9399283549187104,
+        "recall": 0.9815827338129497,
+        "f1-score": 0.9603040540540541,
+        "support": 3475.0
+      },
+      "Weather": {
+        "precision": 0.9153846153846154,
+        "recall": 0.9889196675900277,
+        "f1-score": 0.9507323568575233,
+        "support": 361.0
+      },
+      "accuracy": 0.917474304546978,
+      "macro avg": {
+        "precision": 0.8911098905775329,
+        "recall": 0.9543223726952158,
+        "f1-score": 0.9206933511481807,
+        "support": 143216.0
+      },
+      "weighted avg": {
+        "precision": 0.9197359695603501,
+        "recall": 0.917474304546978,
+        "f1-score": 0.9177475253528921,
+        "support": 143216.0
+      }
+    }
+  },
+  "validation_metrics": {
+    "accuracy": 0.8245192307692307,
+    "precision_macro": 0.7672969474577853,
+    "recall_macro": 0.8111954420041464,
+    "f1_macro": 0.787756853154709,
+    "f1_weighted": 0.825136454077765,
+    "per_class": {
+      "Conflict": {
+        "precision": 0.7095310136157338,
+        "recall": 0.7510008006405124,
+        "f1-score": 0.7296771684169584,
+        "support": 1249.0
+      },
+      "Culture": {
+        "precision": 0.6497005988023952,
+        "recall": 0.7068403908794788,
+        "f1-score": 0.6770670826833073,
+        "support": 307.0
+      },
+      "Diplomacy": {
+        "precision": 0.6438356164383562,
+        "recall": 0.8103448275862069,
+        "f1-score": 0.7175572519083969,
+        "support": 116.0
+      },
+      "Economy": {
+        "precision": 0.8216340621403913,
+        "recall": 0.8283062645011601,
+        "f1-score": 0.8249566724436742,
+        "support": 862.0
+      },
+      "Education": {
+        "precision": 0.7142857142857143,
+        "recall": 0.8415841584158416,
+        "f1-score": 0.7727272727272727,
+        "support": 202.0
+      },
+      "Elections": {
+        "precision": 0.8248175182481752,
+        "recall": 0.8828125,
+        "f1-score": 0.8528301886792453,
+        "support": 256.0
+      },
+      "Energy": {
+        "precision": 0.6717557251908397,
+        "recall": 0.7096774193548387,
+        "f1-score": 0.6901960784313725,
+        "support": 124.0
+      },
+      "Environment": {
+        "precision": 0.6896551724137931,
+        "recall": 0.6896551724137931,
+        "f1-score": 0.6896551724137931,
+        "support": 29.0
+      },
+      "General": {
+        "precision": 0.8796671165092218,
+        "recall": 0.8159816398915084,
+        "f1-score": 0.846628422989501,
+        "support": 4793.0
+      },
+      "Health": {
+        "precision": 0.828042328042328,
+        "recall": 0.9072463768115943,
+        "f1-score": 0.8658367911479945,
+        "support": 345.0
+      },
+      "Justice": {
+        "precision": 0.7283018867924528,
+        "recall": 0.7568627450980392,
+        "f1-score": 0.7423076923076923,
+        "support": 255.0
+      },
+      "Migration": {
+        "precision": 0.8259109311740891,
+        "recall": 0.8571428571428571,
+        "f1-score": 0.8412371134020619,
+        "support": 238.0
+      },
+      "Politics": {
+        "precision": 0.8341095586604569,
+        "recall": 0.8289618690764823,
+        "f1-score": 0.8315277470705285,
+        "support": 4537.0
+      },
+      "Religion": {
+        "precision": 0.7916666666666666,
+        "recall": 0.8260869565217391,
+        "f1-score": 0.8085106382978723,
+        "support": 368.0
+      },
+      "Security": {
+        "precision": 0.8387902330743618,
+        "recall": 0.8573454339194555,
+        "f1-score": 0.8479663394109397,
+        "support": 3526.0
+      },
+      "Sports": {
+        "precision": 0.7932692307692307,
+        "recall": 0.812807881773399,
+        "f1-score": 0.8029197080291971,
+        "support": 203.0
+      },
+      "Technology": {
+        "precision": 0.8163716814159292,
+        "recall": 0.8521939953810623,
+        "f1-score": 0.8338983050847457,
+        "support": 433.0
+      },
+      "Weather": {
+        "precision": 0.75,
+        "recall": 0.8666666666666667,
+        "f1-score": 0.8041237113402062,
+        "support": 45.0
+      },
+      "accuracy": 0.8245192307692307,
+      "macro avg": {
+        "precision": 0.7672969474577853,
+        "recall": 0.8111954420041464,
+        "f1-score": 0.787756853154709,
+        "support": 17888.0
+      },
+      "weighted avg": {
+        "precision": 0.82698293559041,
+        "recall": 0.8245192307692307,
+        "f1-score": 0.825136454077765,
+        "support": 17888.0
+      }
+    }
+  },
+  "test_metrics": {
+    "accuracy": 0.8272025939177102,
+    "precision_macro": 0.7607777904464004,
+    "recall_macro": 0.8175097104743069,
+    "f1_macro": 0.7869540683055941,
+    "f1_weighted": 0.8278985393875712,
+    "per_class": {
+      "Conflict": {
+        "precision": 0.7296238244514106,
+        "recall": 0.7477911646586345,
+        "f1-score": 0.7385957953193177,
+        "support": 1245.0
+      },
+      "Culture": {
+        "precision": 0.6898550724637681,
+        "recall": 0.7752442996742671,
+        "f1-score": 0.7300613496932515,
+        "support": 307.0
+      },
+      "Diplomacy": {
+        "precision": 0.6470588235294118,
+        "recall": 0.853448275862069,
+        "f1-score": 0.7360594795539034,
+        "support": 116.0
+      },
+      "Economy": {
+        "precision": 0.7988950276243094,
+        "recall": 0.8387470997679815,
+        "f1-score": 0.8183361629881154,
+        "support": 862.0
+      },
+      "Education": {
+        "precision": 0.7644444444444445,
+        "recall": 0.8557213930348259,
+        "f1-score": 0.8075117370892019,
+        "support": 201.0
+      },
+      "Elections": {
+        "precision": 0.7852112676056338,
+        "recall": 0.87109375,
+        "f1-score": 0.825925925925926,
+        "support": 256.0
+      },
+      "Energy": {
+        "precision": 0.6592592592592592,
+        "recall": 0.717741935483871,
+        "f1-score": 0.6872586872586872,
+        "support": 124.0
+      },
+      "Environment": {
+        "precision": 0.625,
+        "recall": 0.7142857142857143,
+        "f1-score": 0.6666666666666666,
+        "support": 28.0
+      },
+      "General": {
+        "precision": 0.8927675108373261,
+        "recall": 0.8162286191072173,
+        "f1-score": 0.8527841342486652,
+        "support": 4794.0
+      },
+      "Health": {
+        "precision": 0.837465564738292,
+        "recall": 0.8786127167630058,
+        "f1-score": 0.8575458392101551,
+        "support": 346.0
+      },
+      "Justice": {
+        "precision": 0.6843971631205674,
+        "recall": 0.7509727626459144,
+        "f1-score": 0.7161410018552876,
+        "support": 257.0
+      },
+      "Migration": {
+        "precision": 0.8150943396226416,
+        "recall": 0.9037656903765691,
+        "f1-score": 0.8571428571428571,
+        "support": 239.0
+      },
+      "Politics": {
+        "precision": 0.8377959725603009,
+        "recall": 0.8342882327016307,
+        "f1-score": 0.8360384233189798,
+        "support": 4538.0
+      },
+      "Religion": {
+        "precision": 0.7518610421836228,
+        "recall": 0.8211382113821138,
+        "f1-score": 0.7849740932642487,
+        "support": 369.0
+      },
+      "Security": {
+        "precision": 0.8348066298342541,
+        "recall": 0.8573049645390071,
+        "f1-score": 0.8459062281315606,
+        "support": 3525.0
+      },
+      "Sports": {
+        "precision": 0.797979797979798,
+        "recall": 0.7860696517412935,
+        "f1-score": 0.7919799498746867,
+        "support": 201.0
+      },
+      "Technology": {
+        "precision": 0.825503355704698,
+        "recall": 0.8482758620689655,
+        "f1-score": 0.8367346938775511,
+        "support": 435.0
+      },
+      "Weather": {
+        "precision": 0.7169811320754716,
+        "recall": 0.8444444444444444,
+        "f1-score": 0.7755102040816326,
+        "support": 45.0
+      },
+      "accuracy": 0.8272025939177102,
+      "macro avg": {
+        "precision": 0.7607777904464004,
+        "recall": 0.8175097104743069,
+        "f1-score": 0.7869540683055941,
+        "support": 17888.0
+      },
+      "weighted avg": {
+        "precision": 0.8302760225146963,
+        "recall": 0.8272025939177102,
+        "f1-score": 0.8278985393875712,
+        "support": 17888.0
+      }
+    }
+  },
+  "hyperparameters": {
+    "batch_size": 8,
+    "effective_batch_size": 32,
+    "learning_rate": 1e-05,
+    "num_epochs": 6,
+    "max_length": 512,
+    "weight_decay": 0.08,
+    "label_smoothing": 0.25,
+    "max_grad_norm": 0.3,
+    "dropout_rate": 0.35,
+    "fp16": true,
+    "gradient_checkpointing": false,
+    "optimizer": "adamw_torch",
+    "scheduler": "cosine",
+    "use_focal_loss": true,
+    "focal_alpha": 0.25,
+    "focal_gamma": 2.0,
+    "early_stopping_patience": 2,
+    "early_stopping_threshold": 0.005
+  }
+}

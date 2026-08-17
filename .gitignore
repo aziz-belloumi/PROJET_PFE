@@ -1,24 +1,89 @@
-# Ignore dataset files (CSV) as requested
-*.csv
+# ============================================================
+# Python Bytecode & Cache
+# ============================================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
 
-# Ignore local python virtual environments
-.env/
-venv/
+# ============================================================
+# Distribution / Packaging
+# ============================================================
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# ============================================================
+# Virtual Environments
+# ============================================================
+.env
+.env.*
 .venv/
 env/
+venv/
+ENV/
 
-# Ignore Python caches
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
+# ============================================================
+# Large Datasets (never push CSVs to git)
+# ============================================================
+data/*.csv
+*.csv
 
-# Ignore training outputs, checkpoints, and evaluation plots
-experiments/
+# ============================================================
+# Model Weights & Checkpoints
+# Prevents pushing massive gigabyte weights to remote
+# ============================================================
+*.bin
+*.safetensors
+*.pt
+*.pth
+*.pkl
 
-# Ignore local IDE and agent workspace settings
+# Experiment checkpoints
+experiments/**/checkpoint-*/
+experiments/**/best_model/
+
+# ============================================================
+# Experiment Run Artefacts (keep structure, skip heavy files)
+# ============================================================
+experiments/**/*.png
+experiments/**/*.csv
+experiments/**/plots/
+
+# ============================================================
+# Logs
+# ============================================================
+*.log
+stderr.log
+stdout.log
+report_out.txt
+
+# ============================================================
+# IDE & Editor Settings
+# ============================================================
 .vscode/
 .idea/
 .claude/
 .agents/
 .ipynb_checkpoints/
+
+# ============================================================
+# OS Artefacts
+# ============================================================
+.DS_Store
+Thumbs.db
+desktop.ini
