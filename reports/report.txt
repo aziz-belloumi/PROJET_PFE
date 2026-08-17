@@ -1,0 +1,873 @@
+======================================================================
+       SENTIMENT, NER & TOPIC EVALUATION REPORT
+======================================================================
+
+LANGUAGE DISTRIBUTION:
+  AR: 300 rows (50.0%)
+  EN: 150 rows (25.0%)
+  FR: 150 rows (25.0%)
+  TOTAL: 600 rows
+
+======================================================================
+    GROUND-TRUTH SENTIMENT DISTRIBUTION (by language variant)
+======================================================================
+
+  [MSA Arabic (first 150 AR rows)] — 150 labelled rows
+    POSITIVE: 19 (12.7%)
+    NEGATIVE: 62 (41.3%)
+    NEUTRAL: 69 (46.0%)
+
+  [Dialectal Arabic (remaining AR rows)] — 150 labelled rows
+    POSITIVE: 35 (23.3%)
+    NEGATIVE: 45 (30.0%)
+    NEUTRAL: 70 (46.7%)
+
+  [English] — 150 labelled rows
+    POSITIVE: 22 (14.7%)
+    NEGATIVE: 70 (46.7%)
+    NEUTRAL: 58 (38.7%)
+
+  [French] — 150 labelled rows
+    POSITIVE: 11 (7.3%)
+    NEGATIVE: 69 (46.0%)
+    NEUTRAL: 70 (46.7%)
+
+======================================================================
+    GROUND-TRUTH TOPIC DISTRIBUTION (600 articles + per language)
+======================================================================
+
+  [ALL 600 ARTICLES] — 600 labelled rows
+    السياسة: 65 (10.8%)
+    عام: 56 (9.3%)
+    Conflict: 52 (8.7%)
+    Conflit: 52 (8.7%)
+    الأمن: 49 (8.2%)
+    النزاع: 46 (7.7%)
+    Politics: 39 (6.5%)
+    Politique: 37 (6.2%)
+    الدبلوماسية: 24 (4.0%)
+    Security: 20 (3.3%)
+    Sécurité: 19 (3.2%)
+    الدين: 16 (2.7%)
+    Général: 11 (1.8%)
+    Économie: 9 (1.5%)
+    الرياضة: 8 (1.3%)
+    Technology: 8 (1.3%)
+    General: 7 (1.2%)
+    Economy: 7 (1.2%)
+    الانتخابات: 7 (1.2%)
+    الصحة: 6 (1.0%)
+    Energy: 5 (0.8%)
+    Elections: 5 (0.8%)
+    Diplomatie: 5 (0.8%)
+    Technologie: 5 (0.8%)
+    العدالة: 4 (0.7%)
+    الاقتصاد: 4 (0.7%)
+    Énergie: 4 (0.7%)
+    التعليم: 4 (0.7%)
+    الهجرة: 3 (0.5%)
+    Diplomacy: 3 (0.5%)
+    Élections: 3 (0.5%)
+    الطاقة: 2 (0.3%)
+    Culture: 2 (0.3%)
+    Justice: 2 (0.3%)
+    الثقافة: 2 (0.3%)
+    الطقس: 2 (0.3%)
+    Health: 1 (0.2%)
+    Sports: 1 (0.2%)
+    Santé: 1 (0.2%)
+    Sport: 1 (0.2%)
+    Economie: 1 (0.2%)
+    البيئة: 1 (0.2%)
+    العدل: 1 (0.2%)
+
+  [Arabic] — 300 labelled rows
+    السياسة: 65 (21.7%)
+    عام: 56 (18.7%)
+    الأمن: 49 (16.3%)
+    النزاع: 46 (15.3%)
+    الدبلوماسية: 24 (8.0%)
+    الدين: 16 (5.3%)
+    الرياضة: 8 (2.7%)
+    الانتخابات: 7 (2.3%)
+    الصحة: 6 (2.0%)
+    العدالة: 4 (1.3%)
+    الاقتصاد: 4 (1.3%)
+    التعليم: 4 (1.3%)
+    الهجرة: 3 (1.0%)
+    الطاقة: 2 (0.7%)
+    الثقافة: 2 (0.7%)
+    الطقس: 2 (0.7%)
+    البيئة: 1 (0.3%)
+    العدل: 1 (0.3%)
+
+  [English] — 150 labelled rows
+    Conflict: 52 (34.7%)
+    Politics: 39 (26.0%)
+    Security: 20 (13.3%)
+    Technology: 8 (5.3%)
+    General: 7 (4.7%)
+    Economy: 7 (4.7%)
+    Energy: 5 (3.3%)
+    Elections: 5 (3.3%)
+    Diplomacy: 3 (2.0%)
+    Health: 1 (0.7%)
+    Culture: 1 (0.7%)
+    Sports: 1 (0.7%)
+    Justice: 1 (0.7%)
+
+  [French] — 150 labelled rows
+    Conflit: 52 (34.7%)
+    Politique: 37 (24.7%)
+    Sécurité: 19 (12.7%)
+    Général: 11 (7.3%)
+    Économie: 9 (6.0%)
+    Diplomatie: 5 (3.3%)
+    Technologie: 5 (3.3%)
+    Énergie: 4 (2.7%)
+    Élections: 3 (2.0%)
+    Santé: 1 (0.7%)
+    Culture: 1 (0.7%)
+    Sport: 1 (0.7%)
+    Economie: 1 (0.7%)
+    Justice: 1 (0.7%)
+
+======================================================================
+                    SENTIMENT MODELS PERFORMANCE
+======================================================================
+
+bert-base-arabic-camelbert-msa-sentiment_pred (AR):
+  Total rows: 300
+  Benchmark & Resource Metrics:
+    Device          : GPU (cuda:0)
+    Load Time       : 1.94s
+    Inference Time  : 2.44s (8.1 ms/doc | 122.9 docs/sec)
+    Peak Memory     : CPU +640.2 MB | GPU +424.9 MB
+  Accuracy  : 58.0% (300 valid rows with ground truth)
+  F1 Macro  : 56.1%
+  Precision : 57.5%
+  Recall    : 55.3%
+  Predicted Distribution:
+    NEUTRAL: 162 (54.0%)
+    NEGATIVE: 89 (29.7%)
+    POSITIVE: 49 (16.3%)
+
+  --- MSA / Dialectal Breakdown ---
+    [MSA]:
+      Rows processed : 150
+      Accuracy       : 57.3% (150 valid)
+      F1 Macro       : 52.2%
+      Precision      : 63.2%
+      Recall         : 50.5%
+      Predicted Distribution:
+        POSITIVE: 9 (6.0%)
+        NEGATIVE: 34 (22.7%)
+        NEUTRAL: 107 (71.3%)
+    [Dialectal]:
+      Rows processed : 150
+      Accuracy       : 58.7% (150 valid)
+      F1 Macro       : 58.2%
+      Precision      : 57.7%
+      Recall         : 59.9%
+      Predicted Distribution:
+        POSITIVE: 40 (26.7%)
+        NEGATIVE: 55 (36.7%)
+        NEUTRAL: 55 (36.7%)
+
+bert-base-arabic-camelbert-da-sentiment_pred (AR):
+  Total rows: 300
+  Benchmark & Resource Metrics:
+    Device          : GPU (cuda:0)
+    Load Time       : 1.52s
+    Inference Time  : 2.31s (7.7 ms/doc | 129.8 docs/sec)
+    Peak Memory     : CPU +6.5 MB | GPU +417.6 MB
+  Accuracy  : 58.7% (300 valid rows with ground truth)
+  F1 Macro  : 57.4%
+  Precision : 59.0%
+  Recall    : 56.4%
+  Predicted Distribution:
+    NEUTRAL: 158 (52.7%)
+    NEGATIVE: 97 (32.3%)
+    POSITIVE: 45 (15.0%)
+
+  --- MSA / Dialectal Breakdown ---
+    [MSA]:
+      Rows processed : 150
+      Accuracy       : 56.0% (150 valid)
+      F1 Macro       : 48.4%
+      Precision      : 56.6%
+      Recall         : 47.2%
+      Predicted Distribution:
+        POSITIVE: 8 (5.3%)
+        NEGATIVE: 41 (27.3%)
+        NEUTRAL: 101 (67.3%)
+    [Dialectal]:
+      Rows processed : 150
+      Accuracy       : 61.3% (150 valid)
+      F1 Macro       : 61.6%
+      Precision      : 61.1%
+      Recall         : 63.0%
+      Predicted Distribution:
+        POSITIVE: 37 (24.7%)
+        NEGATIVE: 56 (37.3%)
+        NEUTRAL: 57 (38.0%)
+
+bert-base-arabic-camelbert-mix-sentiment_pred (AR):
+  Total rows: 300
+  Benchmark & Resource Metrics:
+    Device          : GPU (cuda:0)
+    Load Time       : 1.62s
+    Inference Time  : 2.29s (7.6 ms/doc | 131.0 docs/sec)
+    Peak Memory     : CPU +4.7 MB | GPU +417.6 MB
+  Accuracy  : 59.7% (300 valid rows with ground truth)
+  F1 Macro  : 57.7%
+  Precision : 60.1%
+  Recall    : 56.8%
+  Predicted Distribution:
+    NEUTRAL: 172 (57.3%)
+    NEGATIVE: 79 (26.3%)
+    POSITIVE: 49 (16.3%)
+
+  --- MSA / Dialectal Breakdown ---
+    [MSA]:
+      Rows processed : 150
+      Accuracy       : 55.3% (150 valid)
+      F1 Macro       : 46.6%
+      Precision      : 58.6%
+      Recall         : 46.3%
+      Predicted Distribution:
+        POSITIVE: 8 (5.3%)
+        NEGATIVE: 28 (18.7%)
+        NEUTRAL: 114 (76.0%)
+    [Dialectal]:
+      Rows processed : 150
+      Accuracy       : 64.0% (150 valid)
+      F1 Macro       : 63.9%
+      Precision      : 63.2%
+      Recall         : 65.4%
+      Predicted Distribution:
+        POSITIVE: 41 (27.3%)
+        NEGATIVE: 51 (34.0%)
+        NEUTRAL: 58 (38.7%)
+
+AraBert-Arabic-Sentiment-Analysis_pred (AR):
+  Total rows: 300
+  Benchmark & Resource Metrics:
+    Device          : GPU (cuda:0)
+    Load Time       : 1.77s
+    Inference Time  : 2.27s (7.6 ms/doc | 132.1 docs/sec)
+    Peak Memory     : CPU +0.0 MB | GPU +517.6 MB
+  Accuracy  : 53.0% (300 valid rows with ground truth)
+  F1 Macro  : 51.4%
+  Precision : 53.4%
+  Recall    : 50.8%
+  Predicted Distribution:
+    NEUTRAL: 173 (57.7%)
+    NEGATIVE: 78 (26.0%)
+    POSITIVE: 49 (16.3%)
+
+  --- MSA / Dialectal Breakdown ---
+    [MSA]:
+      Rows processed : 150
+      Accuracy       : 50.0% (150 valid)
+      F1 Macro       : 42.7%
+      Precision      : 58.0%
+      Recall         : 43.2%
+      Predicted Distribution:
+        POSITIVE: 7 (4.7%)
+        NEGATIVE: 22 (14.7%)
+        NEUTRAL: 121 (80.7%)
+    [Dialectal]:
+      Rows processed : 150
+      Accuracy       : 56.0% (150 valid)
+      F1 Macro       : 56.0%
+      Precision      : 55.4%
+      Recall         : 58.3%
+      Predicted Distribution:
+        POSITIVE: 42 (28.0%)
+        NEGATIVE: 56 (37.3%)
+        NEUTRAL: 52 (34.7%)
+
+twitter-roberta-base-sentiment-latest_pred (EN):
+  Total rows: 150
+  Benchmark & Resource Metrics:
+    Device          : GPU (cuda:0)
+    Load Time       : 1.64s
+    Inference Time  : 1.13s (7.5 ms/doc | 132.7 docs/sec)
+    Peak Memory     : CPU +77.9 MB | GPU +477.6 MB
+  Accuracy  : 62.0% (150 valid rows with ground truth)
+  F1 Macro  : 59.0%
+  Precision : 69.4%
+  Recall    : 57.1%
+  Predicted Distribution:
+    NEUTRAL: 89 (59.3%)
+    NEGATIVE: 51 (34.0%)
+    POSITIVE: 10 (6.7%)
+
+sentiment-roberta-large-english-3-classes_pred (EN):
+  Total rows: 150
+  Benchmark & Resource Metrics:
+    Device          : GPU (cuda:0)
+    Load Time       : 2.88s
+    Inference Time  : 3.08s (20.5 ms/doc | 48.8 docs/sec)
+    Peak Memory     : CPU +207.3 MB | GPU +1355.9 MB
+  Accuracy  : 50.7% (150 valid rows with ground truth)
+  F1 Macro  : 42.0%
+  Precision : 65.6%
+  Recall    : 44.3%
+  Predicted Distribution:
+    NEUTRAL: 118 (78.7%)
+    NEGATIVE: 28 (18.7%)
+    POSITIVE: 4 (2.7%)
+
+bertweet-base-sentiment-analysis_pred (EN):
+  Total rows: 150
+  Benchmark & Resource Metrics:
+    Device          : GPU (cuda:0)
+    Load Time       : 1.63s
+    Inference Time  : 1.32s (8.8 ms/doc | 113.9 docs/sec)
+    Peak Memory     : CPU +28.2 MB | GPU +515.7 MB
+  Accuracy  : 60.0% (150 valid rows with ground truth)
+  F1 Macro  : 58.1%
+  Precision : 68.3%
+  Recall    : 56.9%
+  Predicted Distribution:
+    NEUTRAL: 97 (64.7%)
+    NEGATIVE: 41 (27.3%)
+    POSITIVE: 12 (8.0%)
+
+distilcamembert-base-sentiment_pred (FR):
+  Total rows: 150
+  Benchmark & Resource Metrics:
+    Device          : GPU (cuda:0)
+    Load Time       : 1.27s
+    Inference Time  : 0.65s (4.3 ms/doc | 231.2 docs/sec)
+    Peak Memory     : CPU +0.0 MB | GPU +260.0 MB
+  Accuracy  : 49.3% (150 valid rows with ground truth)
+  F1 Macro  : 42.7%
+  Precision : 50.8%
+  Recall    : 56.0%
+  Predicted Distribution:
+    NEGATIVE: 86 (57.3%)
+    POSITIVE: 44 (29.3%)
+    NEUTRAL: 20 (13.3%)
+
+bert-base-multilingual-uncased-sentiment_pred (FR):
+  Total rows: 150
+  Benchmark & Resource Metrics:
+    Device          : GPU (cuda:0)
+    Load Time       : 1.89s
+    Inference Time  : 1.17s (7.8 ms/doc | 127.8 docs/sec)
+    Peak Memory     : CPU +8.1 MB | GPU +639.4 MB
+  Accuracy  : 46.0% (150 valid rows with ground truth)
+  F1 Macro  : 36.2%
+  Precision : 42.0%
+  Recall    : 48.6%
+  Predicted Distribution:
+    NEGATIVE: 103 (68.7%)
+    POSITIVE: 34 (22.7%)
+    NEUTRAL: 13 (8.7%)
+
+twitter-xlm-roberta-base-sentiment_pred (MULTI):
+  Total rows: 600
+  Benchmark & Resource Metrics:
+    Device          : GPU (cuda:0)
+    Load Time       : 3.14s
+    Inference Time  : 4.94s (8.2 ms/doc | 121.4 docs/sec)
+    Peak Memory     : CPU +281.4 MB | GPU +1061.4 MB
+  Accuracy  : 58.7% (600 valid rows with ground truth)
+  F1 Macro  : 54.1%
+  Precision : 53.7%
+  Recall    : 55.2%
+  Predicted Distribution:
+    NEGATIVE: 264 (44.0%)
+    NEUTRAL: 225 (37.5%)
+    POSITIVE: 111 (18.5%)
+
+distilbert-base-multilingual-cased-sentiments-student_pred (MULTI):
+  Total rows: 600
+  Benchmark & Resource Metrics:
+    Device          : GPU (cuda:0)
+    Load Time       : 1.68s
+    Inference Time  : 2.82s (4.7 ms/doc | 212.8 docs/sec)
+    Peak Memory     : CPU +53.3 MB | GPU +517.1 MB
+  Accuracy  : 42.5% (600 valid rows with ground truth)
+  F1 Macro  : 34.1%
+  Precision : 54.2%
+  Recall    : 47.6%
+  Predicted Distribution:
+    NEGATIVE: 366 (61.0%)
+    POSITIVE: 227 (37.8%)
+    NEUTRAL: 7 (1.2%)
+
+======================================================================
+                    NER MODELS PERFORMANCE
+======================================================================
+
+arabic-ner_ner_pred (AR):
+  Total rows    : 300
+  Benchmark & Resource Metrics:
+    Device          : GPU (cuda:0)
+    Load Time       : 1.34s
+    Inference Time  : 3.06s (10.2 ms/doc | 98.1 docs/sec)
+    Peak Memory     : CPU +6.4 MB | GPU +421.4 MB
+  Processed     : 300 (100.0%)
+  With entities : 239 (79.7% of processed)
+  No entities   : 61 (20.3% of processed)
+
+  --- MSA / Dialectal Breakdown ---
+    [MSA]:
+      Processed           : 150
+      With entities       : 141 (94.0%)
+      Avg entities/text   : 5.38
+    [Dialectal]:
+      Processed           : 150
+      With entities       : 98 (65.3%)
+      Avg entities/text   : 4.70
+
+bert-base-arabic-camelbert-msa-ner_ner_pred (AR):
+  Total rows    : 300
+  Benchmark & Resource Metrics:
+    Device          : GPU (cuda:0)
+    Load Time       : 1.44s
+    Inference Time  : 3.04s (10.1 ms/doc | 98.8 docs/sec)
+    Peak Memory     : CPU +424.7 MB | GPU +415.4 MB
+  Processed     : 300 (100.0%)
+  With entities : 231 (77.0% of processed)
+  No entities   : 69 (23.0% of processed)
+
+  --- MSA / Dialectal Breakdown ---
+    [MSA]:
+      Processed           : 150
+      With entities       : 130 (86.7%)
+      Avg entities/text   : 4.41
+    [Dialectal]:
+      Processed           : 150
+      With entities       : 101 (67.3%)
+      Avg entities/text   : 3.91
+
+bert-base-arabic-camelbert-mix-ner_ner_pred (AR):
+  Total rows    : 300
+  Benchmark & Resource Metrics:
+    Device          : GPU (cuda:0)
+    Load Time       : 1.47s
+    Inference Time  : 3.07s (10.2 ms/doc | 97.7 docs/sec)
+    Peak Memory     : CPU +3.2 MB | GPU +415.4 MB
+  Processed     : 300 (100.0%)
+  With entities : 233 (77.7% of processed)
+  No entities   : 67 (22.3% of processed)
+
+  --- MSA / Dialectal Breakdown ---
+    [MSA]:
+      Processed           : 150
+      With entities       : 132 (88.0%)
+      Avg entities/text   : 4.36
+    [Dialectal]:
+      Processed           : 150
+      With entities       : 101 (67.3%)
+      Avg entities/text   : 4.04
+
+AraBert-Arabic-NER-CoNLLpp_ner_pred (AR):
+  Total rows    : 300
+  Benchmark & Resource Metrics:
+    Device          : GPU (cuda:0)
+    Load Time       : 1.54s
+    Inference Time  : 2.92s (9.7 ms/doc | 102.8 docs/sec)
+    Peak Memory     : CPU +0.0 MB | GPU +515.4 MB
+  Processed     : 300 (100.0%)
+  With entities : 258 (86.0% of processed)
+  No entities   : 42 (14.0% of processed)
+
+  --- MSA / Dialectal Breakdown ---
+    [MSA]:
+      Processed           : 150
+      With entities       : 139 (92.7%)
+      Avg entities/text   : 3.52
+    [Dialectal]:
+      Processed           : 150
+      With entities       : 119 (79.3%)
+      Avg entities/text   : 3.55
+
+bert-base-NER_ner_pred (EN):
+  Total rows    : 150
+  Benchmark & Resource Metrics:
+    Device          : GPU (cuda:0)
+    Load Time       : 1.32s
+    Inference Time  : 1.41s (9.4 ms/doc | 106.0 docs/sec)
+    Peak Memory     : CPU +4.1 MB | GPU +412.3 MB
+  Processed     : 150 (100.0%)
+  With entities : 139 (92.7% of processed)
+  No entities   : 11 (7.3% of processed)
+
+bert-large-NER_ner_pred (EN):
+  Total rows    : 150
+  Benchmark & Resource Metrics:
+    Device          : GPU (cuda:0)
+    Load Time       : 2.20s
+    Inference Time  : 3.36s (22.4 ms/doc | 44.6 docs/sec)
+    Peak Memory     : CPU +0.2 MB | GPU +1269.5 MB
+  Processed     : 150 (100.0%)
+  With entities : 137 (91.3% of processed)
+  No entities   : 13 (8.7% of processed)
+
+roberta-large-ner-english_ner_pred (EN):
+  Total rows    : 150
+  Benchmark & Resource Metrics:
+    Device          : GPU (cuda:0)
+    Load Time       : 2.36s
+    Inference Time  : 3.22s (21.5 ms/doc | 46.5 docs/sec)
+    Peak Memory     : CPU +10.5 MB | GPU +1351.9 MB
+  Processed     : 150 (100.0%)
+  With entities : 138 (92.0% of processed)
+  No entities   : 12 (8.0% of processed)
+
+camembert-ner_ner_pred (FR):
+  Total rows    : 150
+  Benchmark & Resource Metrics:
+    Device          : GPU (cuda:0)
+    Load Time       : 1.46s
+    Inference Time  : 1.38s (9.2 ms/doc | 108.6 docs/sec)
+    Peak Memory     : CPU +13.1 MB | GPU +421.4 MB
+  Processed     : 150 (100.0%)
+  With entities : 121 (80.7% of processed)
+  No entities   : 29 (19.3% of processed)
+
+distilcamembert-base-ner_ner_pred (FR):
+  Total rows    : 150
+  Benchmark & Resource Metrics:
+    Device          : GPU (cuda:0)
+    Load Time       : 1.16s
+    Inference Time  : 0.91s (6.1 ms/doc | 164.4 docs/sec)
+    Peak Memory     : CPU +3.1 MB | GPU +259.1 MB
+  Processed     : 150 (100.0%)
+  With entities : 120 (80.0% of processed)
+  No entities   : 30 (20.0% of processed)
+
+gliner_multi-v2.1_ner_pred (MULTI):
+  Total rows    : 600
+  Benchmark & Resource Metrics:
+    Device          : GPU (cuda:0)
+    Load Time       : 5.73s
+    Inference Time  : 17.78s (29.6 ms/doc | 33.7 docs/sec)
+    Peak Memory     : CPU +836.6 MB | GPU +1105.1 MB
+  Processed     : 600 (100.0%)
+  With entities : 511 (85.2% of processed)
+  No entities   : 89 (14.8% of processed)
+
+bert-base-multilingual-cased-ner-hrl_ner_pred (MULTI):
+  Total rows    : 600
+  Benchmark & Resource Metrics:
+    Device          : GPU (cuda:0)
+    Load Time       : 1.85s
+    Inference Time  : 7.01s (11.7 ms/doc | 85.6 docs/sec)
+    Peak Memory     : CPU +18.7 MB | GPU +677.1 MB
+  Processed     : 600 (100.0%)
+  With entities : 452 (75.3% of processed)
+  No entities   : 148 (24.7% of processed)
+
+wikineural-multilingual-ner_ner_pred (MULTI):
+  Total rows    : 600
+  Benchmark & Resource Metrics:
+    Device          : GPU (cuda:0)
+    Load Time       : 1.91s
+    Inference Time  : 7.31s (12.2 ms/doc | 82.1 docs/sec)
+    Peak Memory     : CPU +35.0 MB | GPU +677.1 MB
+  Processed     : 600 (100.0%)
+  With entities : 508 (84.7% of processed)
+  No entities   : 92 (15.3% of processed)
+
+======================================================================
+                    TOPIC MODELS PERFORMANCE
+======================================================================
+
+arabic-bert-nli-matryoshka_topic_pred (AR):
+  Total rows: 300
+  Benchmark & Resource Metrics:
+    Device          : GPU (cuda:0)
+    Load Time       : 2.19s
+    Inference Time  : 40.92s (136.4 ms/doc | 7.3 docs/sec)
+    Peak Memory     : CPU +10.1 MB | GPU +517.6 MB
+  Accuracy  : 10.0% (300 valid rows with ground truth)
+  F1 Macro  : 11.7%
+  Precision : 24.2%
+  Recall    : 18.3%
+  Predicted Distribution:
+    الطاقة: 69 (23.0%)
+    الطقس: 43 (14.3%)
+    التعليم: 36 (12.0%)
+    الصحة: 21 (7.0%)
+    التكنولوجيا: 19 (6.3%)
+    الدين: 16 (5.3%)
+    الأمن: 15 (5.0%)
+    الاقتصاد: 14 (4.7%)
+    الثقافة: 14 (4.7%)
+    الرياضة: 14 (4.7%)
+    السياسة: 9 (3.0%)
+    العدالة: 9 (3.0%)
+    عام: 9 (3.0%)
+    الهجرة: 5 (1.7%)
+    البيئة: 3 (1.0%)
+    النزاع: 3 (1.0%)
+    الدبلوماسية: 1 (0.3%)
+
+s04-arbert-nli_topic_pred (AR):
+  Total rows: 300
+  Benchmark & Resource Metrics:
+    Device          : GPU (cuda:0)
+    Load Time       : 2.37s
+    Inference Time  : 46.38s (154.6 ms/doc | 6.5 docs/sec)
+    Peak Memory     : CPU +25.5 MB | GPU +622.6 MB
+  Accuracy  : 2.7% (300 valid rows with ground truth)
+  F1 Macro  : 1.5%
+  Precision : 0.9%
+  Recall    : 5.1%
+  Predicted Distribution:
+    الثقافة: 124 (41.3%)
+    الدين: 67 (22.3%)
+    الصحة: 42 (14.0%)
+    الاقتصاد: 22 (7.3%)
+    التعليم: 20 (6.7%)
+    العدالة: 9 (3.0%)
+    السياسة: 8 (2.7%)
+    عام: 4 (1.3%)
+    الرياضة: 3 (1.0%)
+    التكنولوجيا: 1 (0.3%)
+
+DeBERTa-v3-large-mnli-fever-anli-ling-wanli_topic_pred (EN):
+  Total rows: 150
+  Benchmark & Resource Metrics:
+    Device          : GPU (cuda:0)
+    Load Time       : 3.08s
+    Inference Time  : 101.33s (675.5 ms/doc | 1.5 docs/sec)
+    Peak Memory     : CPU +251.3 MB | GPU +830.1 MB
+  Accuracy  : 52.0% (150 valid rows with ground truth)
+  F1 Macro  : 33.8%
+  Precision : 37.2%
+  Recall    : 38.4%
+  Predicted Distribution:
+    Conflict: 66 (44.0%)
+    Politics: 40 (26.7%)
+    Technology: 12 (8.0%)
+    Security: 7 (4.7%)
+    Environment: 4 (2.7%)
+    Culture: 4 (2.7%)
+    Energy: 3 (2.0%)
+    Elections: 3 (2.0%)
+    General: 3 (2.0%)
+    Migration: 2 (1.3%)
+    Health: 2 (1.3%)
+    Economy: 2 (1.3%)
+    Education: 1 (0.7%)
+    Sports: 1 (0.7%)
+
+roberta-large-mnli_topic_pred (EN):
+  Total rows: 150
+  Benchmark & Resource Metrics:
+    Device          : GPU (cuda:0)
+    Load Time       : 3.46s
+    Inference Time  : 59.09s (393.9 ms/doc | 2.5 docs/sec)
+    Peak Memory     : CPU +18.3 MB | GPU +1355.9 MB
+  Accuracy  : 36.7% (150 valid rows with ground truth)
+  F1 Macro  : 18.6%
+  Precision : 20.4%
+  Recall    : 18.4%
+  Predicted Distribution:
+    Politics: 35 (23.3%)
+    Conflict: 34 (22.7%)
+    Migration: 28 (18.7%)
+    Health: 15 (10.0%)
+    Elections: 9 (6.0%)
+    General: 8 (5.3%)
+    Technology: 4 (2.7%)
+    Economy: 4 (2.7%)
+    Diplomacy: 4 (2.7%)
+    Culture: 3 (2.0%)
+    Environment: 3 (2.0%)
+    Justice: 1 (0.7%)
+    Energy: 1 (0.7%)
+    Sports: 1 (0.7%)
+
+bart-large-mnli_topic_pred (EN):
+  Total rows: 150
+  Benchmark & Resource Metrics:
+    Device          : GPU (cuda:0)
+    Load Time       : 3.14s
+    Inference Time  : 74.10s (494.0 ms/doc | 2.0 docs/sec)
+    Peak Memory     : CPU +35.1 MB | GPU +1553.9 MB
+  Accuracy  : 48.0% (150 valid rows with ground truth)
+  F1 Macro  : 44.2%
+  Precision : 53.7%
+  Recall    : 48.8%
+  Predicted Distribution:
+    Conflict: 87 (58.0%)
+    Politics: 16 (10.7%)
+    General: 14 (9.3%)
+    Culture: 7 (4.7%)
+    Security: 7 (4.7%)
+    Technology: 6 (4.0%)
+    Economy: 3 (2.0%)
+    Health: 2 (1.3%)
+    Elections: 2 (1.3%)
+    Environment: 2 (1.3%)
+    Energy: 1 (0.7%)
+    Diplomacy: 1 (0.7%)
+    Sports: 1 (0.7%)
+    Justice: 1 (0.7%)
+
+distilcamembert-base-nli_topic_pred (FR):
+  Total rows: 150
+  Benchmark & Resource Metrics:
+    Device          : GPU (cuda:0)
+    Load Time       : 1.24s
+    Inference Time  : 13.94s (92.9 ms/doc | 10.8 docs/sec)
+    Peak Memory     : CPU +0.0 MB | GPU +260.0 MB
+  Accuracy  : 35.3% (150 valid rows with ground truth)
+  F1 Macro  : 13.8%
+  Precision : 18.8%
+  Recall    : 15.8%
+  Predicted Distribution:
+    Conflit: 98 (65.3%)
+    Migration: 22 (14.7%)
+    Diplomatie: 5 (3.3%)
+    Élections: 5 (3.3%)
+    Technologie: 3 (2.0%)
+    Énergie: 3 (2.0%)
+    Sécurité: 3 (2.0%)
+    Politique: 3 (2.0%)
+    Santé: 2 (1.3%)
+    Général: 2 (1.3%)
+    Religion: 1 (0.7%)
+    Environnement: 1 (0.7%)
+    Éducation: 1 (0.7%)
+    Justice: 1 (0.7%)
+
+mDeBERTa-v3-base-xnli-multilingual-nli-2mil7_topic_pred (MULTI):
+  Total rows: 600
+  Benchmark & Resource Metrics:
+    Device          : GPU (cuda:0)
+    Load Time       : 3.63s
+    Inference Time  : 212.16s (353.6 ms/doc | 2.8 docs/sec)
+    Peak Memory     : CPU +170.8 MB | GPU +538.9 MB
+  NOTE: Model uses language-matched candidate labels per row (AR/EN/FR),
+        so accuracy is directly comparable to language-specific models.
+  Accuracy  : 36.3% (600 valid rows with ground truth)
+  F1 Macro  : 26.2%
+  Precision : 28.5%
+  Recall    : 36.3%
+  Predicted Distribution:
+    الدبلوماسية: 80 (13.3%)
+    النزاع: 75 (12.5%)
+    Diplomatie: 47 (7.8%)
+    Conflict: 43 (7.2%)
+    Politics: 40 (6.7%)
+    السياسة: 30 (5.0%)
+    Politique: 23 (3.8%)
+    الانتخابات: 18 (3.0%)
+    التعليم: 13 (2.2%)
+    الدين: 13 (2.2%)
+    الهجرة: 13 (2.2%)
+    الأمن: 12 (2.0%)
+    Technology: 11 (1.8%)
+    Sécurité: 11 (1.8%)
+    الطقس: 10 (1.7%)
+    Energy: 10 (1.7%)
+    Diplomacy: 10 (1.7%)
+    Security: 10 (1.7%)
+    Technologie: 10 (1.7%)
+    الرياضة: 9 (1.5%)
+    Énergie: 9 (1.5%)
+    Conflit: 9 (1.5%)
+    Général: 9 (1.5%)
+    الطاقة: 8 (1.3%)
+    General: 8 (1.3%)
+    التكنولوجيا: 7 (1.2%)
+    Migration: 7 (1.2%)
+    Sport: 6 (1.0%)
+    الصحة: 4 (0.7%)
+    الاقتصاد: 4 (0.7%)
+    Justice: 4 (0.7%)
+    Sports: 4 (0.7%)
+    Religion: 4 (0.7%)
+    Environnement: 3 (0.5%)
+    Santé: 3 (0.5%)
+    Économie: 3 (0.5%)
+    العدالة: 2 (0.3%)
+    Environment: 2 (0.3%)
+    Elections: 2 (0.3%)
+    Health: 2 (0.3%)
+    Economy: 2 (0.3%)
+    Culture: 2 (0.3%)
+    Élections: 2 (0.3%)
+    Météo: 2 (0.3%)
+    الثقافة: 1 (0.2%)
+    عام: 1 (0.2%)
+    Weather: 1 (0.2%)
+    Éducation: 1 (0.2%)
+
+xlm-roberta-large-xnli_topic_pred (MULTI):
+  Total rows: 600
+  Benchmark & Resource Metrics:
+    Device          : GPU (cuda:0)
+    Load Time       : 4.24s
+    Inference Time  : 267.12s (445.2 ms/doc | 2.2 docs/sec)
+    Peak Memory     : CPU +128.6 MB | GPU +2136.1 MB
+  NOTE: Model uses language-matched candidate labels per row (AR/EN/FR),
+        so accuracy is directly comparable to language-specific models.
+  Accuracy  : 29.8% (600 valid rows with ground truth)
+  F1 Macro  : 24.5%
+  Precision : 26.6%
+  Recall    : 31.0%
+  Predicted Distribution:
+    النزاع: 102 (17.0%)
+    Conflict: 69 (11.5%)
+    الدبلوماسية: 56 (9.3%)
+    Conflit: 49 (8.2%)
+    Migration: 28 (4.7%)
+    الهجرة: 24 (4.0%)
+    الطاقة: 22 (3.7%)
+    General: 22 (3.7%)
+    Général: 18 (3.0%)
+    الأمن: 12 (2.0%)
+    Politics: 12 (2.0%)
+    Économie: 12 (2.0%)
+    الدين: 11 (1.8%)
+    Diplomacy: 11 (1.8%)
+    Politique: 11 (1.8%)
+    الصحة: 10 (1.7%)
+    الطقس: 9 (1.5%)
+    السياسة: 9 (1.5%)
+    عام: 8 (1.3%)
+    Technologie: 8 (1.3%)
+    الانتخابات: 7 (1.2%)
+    Élections: 7 (1.2%)
+    Énergie: 7 (1.2%)
+    الثقافة: 6 (1.0%)
+    Elections: 6 (1.0%)
+    العدالة: 5 (0.8%)
+    الرياضة: 5 (0.8%)
+    الاقتصاد: 5 (0.8%)
+    Diplomatie: 5 (0.8%)
+    Sécurité: 5 (0.8%)
+    التعليم: 4 (0.7%)
+    Economy: 4 (0.7%)
+    Weather: 4 (0.7%)
+    Environnement: 4 (0.7%)
+    البيئة: 3 (0.5%)
+    Security: 3 (0.5%)
+    Santé: 3 (0.5%)
+    التكنولوجيا: 2 (0.3%)
+    Environment: 2 (0.3%)
+    Health: 2 (0.3%)
+    Justice: 2 (0.3%)
+    Education: 1 (0.2%)
+    Energy: 1 (0.2%)
+    Religion: 1 (0.2%)
+    Culture: 1 (0.2%)
+    Sports: 1 (0.2%)
+    Éducation: 1 (0.2%)
+
+======================================================================
+                    MISSING VALUES SUMMARY
+======================================================================
+TOTAL MISSING VALUES ACROSS ALL COLUMNS: 0
+======================================================================

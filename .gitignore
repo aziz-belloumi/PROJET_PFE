@@ -1,0 +1,74 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual Environments
+venv/
+.venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# IDE & Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.project
+.pydevproject
+.settings/
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# Caches & temporary runtime artifacts
+.cache/
+.pytest_cache/
+.coverage
+htmlcov/
+*.log
+tmp/
+huggingface_cache/
+
+# Ignore large CSV data files (too big for version control)
+*.csv
+
+# Re-allow small benchmark report CSVs
+!benchmark/resource_usage_report.csv
+
+# Explicitly track important non-CSV files
+!reports/report.txt
+!benchmark/score_remarques.md
