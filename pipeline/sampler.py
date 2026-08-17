@@ -30,6 +30,7 @@ def run_sampling(
     ner_models_by_lang: Dict[str, list],
     logger: logging.Logger,
     raw_table: str = "article",
+    lang_threshold: float | None = None,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """
     Query DB, detect language, filter, preprocess.
@@ -46,7 +47,7 @@ def run_sampling(
         (work_df, skipped_df)
     """
     engine = db.get_engine()
-    lang_threshold = Config.LANG_THRESHOLD
+    lang_threshold = lang_threshold if lang_threshold is not None else Config.LANG_THRESHOLD
     supported_langs = set(ner_models_by_lang.keys())
 
     # ------------------------------------------------------------------
@@ -106,7 +107,7 @@ def run_sampling(
     for r in skipped_df.itertuples(index=False):
         db.upsert_articles_enriched(
             article_id=int(r.id),
-            language=str(r.lang),
+            language=None,
             sentiment_label="SKIPPED",
         )
 
@@ -126,6 +127,27 @@ def run_sampling(
     work_df["text_topic"] = work_df.apply(
         lambda r: preproc.preprocess(r.text_raw, str(r.lang), "topic"), axis=1
     )
+
+    # Filter articles that become empty after preprocessing
+    empty_mask = (
+        work_df["text_sentiment"].fillna("").str.strip().eq("")
+        | work_df["text_topic"].fillna("").str.strip().eq("")
+    )
+    empty_df = work_df[empty_mask].copy()
+    work_df  = work_df[~empty_mask].copy()
+
+    if not empty_df.empty:
+        logger.info(f"Marking {len(empty_df)} empty preprocessed articles as SKIPPED (language=NULL)")
+        for r in empty_df.itertuples(index=False):
+            db.upsert_articles_enriched(
+                article_id=int(r.id),
+                language=None,
+                sentiment_label="SKIPPED",
+            )
+
+    if work_df.empty:
+        logger.warning("All articles became empty after preprocessing.")
+        return work_df, pd.concat([skipped_df, empty_df], ignore_index=True)
 
     # ------------------------------------------------------------------
     # 6) Pre-insert placeholder rows in articles_enriched

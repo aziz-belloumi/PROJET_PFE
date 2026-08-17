@@ -26,17 +26,18 @@ Thumbs.db
 results/*
 !results/.gitkeep
 
-# Data Files (Do not push large CSVs)
-data_seperation/**/*.csv
+# Data Files
 data_seperation/**/*.json
 data_seperation/processing_stats.txt
-data_seperation/check_dialect/ensemble_results_pc*.csv
 data_seperation/check_dialect/progress_pc*.json
-data_seperation/arabic_texts_pc*.csv
-data/*.csv
+
+# Ignore all CSV files (too large)
+*.csv
+
+# Model weights & finetuned models (large binary files — keep folder structure only)
+finetuned_models/**
+!finetuned_models/**/
+!finetuned_models/**/.gitkeep
 
 # Keep directory structure
 !**/.gitkeep
-
-# Cleaned Data folder files (Ignore heavy CSV datasets)
-cleaned_data/*.csv

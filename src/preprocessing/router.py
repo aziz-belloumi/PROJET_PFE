@@ -1,105 +1,19 @@
 from typing import Optional, Dict, Any
 import logging
 
+from src.config import Config
 from .arabic import ArabicPreprocessor
 from .latin import LatinPreprocessor
 
 
-# =========================================================
-# ARABIC PRESETS
-# =========================================================
-PREPROCESS_LANG_DETECT_PARAMS: Dict[str, Any] = {
-    "remove_diacritics": False,
-    "normalize_arabic": True,
-    "remove_urls": True,
-    "remove_emails": True,
-    "remove_numbers": False,
-    "remove_special": True,
-    "remove_repeated": False,
-    "remove_tatweel": True,
-    "handle_hashtags": True,
-    "fix_merged_keywords": True,
-    "normalize_punct": True,
-    "remove_social_noise": True,
-}
-
-PREPROCESS_NER_PARAMS: Dict[str, Any] = {
-    "remove_diacritics": True,
-    "normalize_arabic": True,
-    "remove_urls": True,
-    "remove_emails": True,
-    "remove_numbers": False,
-    "remove_special": True,
-    "remove_repeated": False,
-    "remove_tatweel": True,
-    "handle_hashtags": True,
-    "fix_merged_keywords": True,
-    "normalize_punct": True,
-    "remove_social_noise": True,
-}
-
-PREPROCESS_SENTIMENT_PARAMS: Dict[str, Any] = {
-    "remove_diacritics": True,
-    "normalize_arabic": True,
-    "remove_urls": True,
-    "remove_emails": True,
-    "remove_numbers": False,
-    "remove_special": True,
-    "remove_repeated": False,
-    "remove_tatweel": True,
-    "handle_hashtags": True,
-    "fix_merged_keywords": True,
-    "normalize_punct": True,
-    "remove_social_noise": True,
-}
-
-# =========================================================
-# LATIN PRESETS (EN / FR)
-# =========================================================
-LATIN_LANG_DETECT_PARAMS: Dict[str, Any] = {
-    "normalize_unicode": True,
-    # With your updated LatinPreprocessor:
-    # standardize_social=False => REMOVE links/mentions/emails entirely
-    "standardize_social": False,
-    "handle_hashtags": False,
-    "reduce_repetitions": False,
-    "normalize_punct": True,
-    "clean_twitter": True,
-    "remove_junk": True,
-}
-
-LATIN_NER_PARAMS: Dict[str, Any] = {
-    "normalize_unicode": True,
-    # Remove links/mentions/emails entirely (cleaner for NER)
-    "standardize_social": False,
-    "handle_hashtags": True,   
-    "reduce_repetitions": True,
-    "normalize_punct": True,
-    "clean_twitter": True,
-    "remove_junk": True,
-}
-
-LATIN_SENTIMENT_PARAMS: Dict[str, Any] = {
-    "normalize_unicode": True,
-    # Keep placeholders @user/http/email (CardiffNLP expects this)
-    "standardize_social": True,
-    "handle_hashtags": True,  # keep # for sentiment context
-    "reduce_repetitions": True,
-    "normalize_punct": True,
-    "clean_twitter": True,
-}
-
-LATIN_TOPIC_PARAMS: Dict[str, Any] = {
-    "normalize_unicode": True,
-    # Remove links/mentions/emails entirely for topic
-    "standardize_social": False,
-    # RECOMMENDED UPDATE: strip hashtags for topic as well
-    "handle_hashtags": True,
-    "reduce_repetitions": False,
-    "normalize_punct": True,
-    "clean_twitter": True,
-    "remove_junk": True,
-}
+# Presets alias to centralized Config
+PREPROCESS_LANG_DETECT_PARAMS: Dict[str, Any] = Config.PREPROCESS_LANG_DETECT_PARAMS
+PREPROCESS_NER_PARAMS: Dict[str, Any] = Config.PREPROCESS_NER_PARAMS
+PREPROCESS_SENTIMENT_PARAMS: Dict[str, Any] = Config.PREPROCESS_SENTIMENT_PARAMS
+LATIN_LANG_DETECT_PARAMS: Dict[str, Any] = Config.LATIN_LANG_DETECT_PARAMS
+LATIN_NER_PARAMS: Dict[str, Any] = Config.LATIN_NER_PARAMS
+LATIN_SENTIMENT_PARAMS: Dict[str, Any] = Config.LATIN_SENTIMENT_PARAMS
+LATIN_TOPIC_PARAMS: Dict[str, Any] = Config.LATIN_TOPIC_PARAMS
 
 
 class PreprocessRouter:
@@ -156,6 +70,13 @@ class PreprocessRouter:
             text = self.ar.apply_final_structural_fixes(text)
             
             return text
+
+        if task == "ner":
+            return self.lat.preprocess(text, **LATIN_NER_PARAMS)
+        if task == "sentiment":
+            return self.lat.preprocess(text, **LATIN_SENTIMENT_PARAMS)
+        if task == "topic":
+            return self.lat.preprocess(text, **LATIN_TOPIC_PARAMS)
 
         return self.lat.preprocess(text, **LATIN_LANG_DETECT_PARAMS)
 

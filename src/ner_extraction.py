@@ -9,31 +9,27 @@ import torch
 from transformers import AutoTokenizer, AutoModelForTokenClassification, pipeline
 from gliner import GLiNER
 
+# --- Monkey-patch for GLiNER + new huggingface_hub ---
+if hasattr(GLiNER, '_from_pretrained'):
+    _orig_from_pretrained = GLiNER._from_pretrained
+    @classmethod
+    def _patched_from_pretrained(cls, *args, **kwargs):
+        kwargs.setdefault('proxies', None)
+        kwargs.setdefault('resume_download', False)
+        return _orig_from_pretrained.__func__(cls, *args, **kwargs)
+    GLiNER._from_pretrained = _patched_from_pretrained
+# -----------------------------------------------------
+
 
 class ModelLoadError(Exception):
     """Raised when a model fails to load from Hugging Face."""
     pass
 
+from src.config import Config
 from src.chunking import token_chunks
 
 
-DEFAULT_MODEL_REGISTRY: Dict[int, str] = {
-    0: "arabert",
-    1: "camel",
-}
-
-
-DEFAULT_NER_PARAMS: Dict[str, Any] = {
-    "max_chunk_tokens": 450,
-    "overlap_tokens": 100,
-    "score_threshold": 0.60,
-    "merge_entities": True,
-    "deduplicate": True,
-    "min_len_person": 2,
-    "min_len_other": 3,
-    "expand_short_entities": True,
-    "expand_max_len": 3,
-}
+DEFAULT_NER_PARAMS: Dict[str, Any] = Config.DEFAULT_NER_PARAMS
 
 # Unified label mapping:
 LABEL_UNIFICATION = {
@@ -395,8 +391,7 @@ class TransformersNER:
                 best[key] = e
         return list(best.values())
 
-    # Runs full NER pipeline and returns sorted list of entities
-    def predict(self, text: str) -> List[NEREntity]:
+    def predict(self, text: str, language: Optional[str] = None) -> List[NEREntity]:
         if not text or not isinstance(text, str):
             return []
 
@@ -473,21 +468,8 @@ class GLiNERNER:
     GLiNER-based NER implementation that follows the same interface as TransformersNER.
     """
 
-    DEFAULT_LABELS = [
-        "person name",
-        "organization or institution or government body",
-        "geographic location or city or country",
-        "date or time expression",
-        "named event or armed conflict or political crisis",
-        "commercial product or brand name",
-        "sports competition or league or tournament",
-    ]
-
-    LANGUAGE_THRESHOLDS = {
-        "ar": 0.6,
-        "en": 0.6,
-        "fr": 0.6,
-    }
+    DEFAULT_LABELS = Config.GLINER_LABELS
+    LANGUAGE_THRESHOLDS = Config.GLINER_LANGUAGE_THRESHOLDS
 
     def __init__(
         self,
@@ -512,7 +494,7 @@ class GLiNERNER:
 
         self.logger.info(f"Loading GLiNER model: {self.model_name} | device={self.device}")
         try:
-            self.model = GLiNER.from_pretrained(self.model_name)
+            self.model = GLiNER.from_pretrained(self.model_name, proxies=None, resume_download=False)
             if self.device >= 0:
                 self.model = self.model.to(f"cuda:{self.device}")
         except Exception as e:

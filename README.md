@@ -1,223 +1,316 @@
 # Multilingual NLP Pipeline for News Analysis
 
-This repository contains the codebase for a comprehensive Multilingual Natural Language Processing (NLP) pipeline, developed as a Projet de Fin d'Études (PFE).
-
-## 📌 Project Overview
-The primary goal of this project is to process, analyze, and extract deep insights from a large corpus of multilingual news articles (primarily Arabic, French, and English). It is designed to automatically understand the subject matter, extract key entities (people, organizations, locations), gauge the sentiment of the text, and perform trend analysis over time.
+A Projet de Fin d'Etudes (PFE) - automated NLP enrichment pipeline for Arabic, English, and French news articles using fine-tuned BERT-based models and GPU-accelerated inference.
 
 ---
 
-## 🎯 Current Phase: Baseline & Ground Truth Collection (Zero-Shot)
-In this **current version**, our focus is heavily on data preparation, pipeline hardening, and baseline evaluations:
-1. **Relying on Pre-Trained Models (Zero-Shot):** Using highly capable out-of-the-box models (like GLiNER for NER and LLMs for sentiment/topics) without specific training on our news dataset.
-2. **Generating Ground Truth:** Exporting separated language datasets (e.g., `french_texts.csv`) and running manual annotator CLI tools to validate model outputs. This creates a high-quality, human-verified dataset.
-3. **Benchmarking:** Evaluating the baseline accuracy, resource consumption, and inference speed of these models.
+## Project Overview
 
-### 🔮 Future Phase: Fine-Tuning
-The primary purpose of what we are doing right now is data collection for the future. We are going to **Fine-Tune** smaller, highly efficient domain-specific Transformer models (like AraBERT, CamemBERT, or specialized RoBERTa variants) later. The annotations and datasets we are generating and cleaning right now will serve as the training data for these fine-tuned models, allowing us to eventually replace heavy, general-purpose LLMs with faster, specialized alternatives.
+This pipeline reads raw news articles from a MySQL database, detects their language, preprocesses them, and runs three NLP tasks:
 
----
+| Task | Model Type | Output |
+|------|-----------|--------|
+| Sentiment Analysis | Fine-tuned BERT (per-language) | POSITIVE / NEGATIVE / NEUTRAL |
+| Topic Classification | Fine-tuned BERT (per-language) | 18 categories (Politics, Conflict, Economy...) |
+| Named Entity Recognition | GLiNER gliner_multi-v2.1 | Entities + type + confidence |
 
-## 🚀 Key Features
-
-### 1. Advanced Multilingual Support
-- **Language Detection:** Uses `fasttext` to automatically detect the language of incoming raw texts.
-- **Language-Specific Preprocessing:** Features dedicated preprocessing routers (`src/preprocessing/router.py`).
-  - **Arabic (`arabic.py`):** Includes specialized normalization for Arabic text, such as removing decorative characters (Franco-Arabic text, spam strings, block-drawing characters), standardizing "laughter" repetitions, and unifying brackets and punctuation.
-  - **Latin (`latin.py`):** Handles French and English text normalization and noise reduction.
-
-### 2. Core NLP AI Models
-- **Named Entity Recognition (NER):** Leverages `GLiNER` (Generalist and Lightweight Model for Named Entity Recognition, specifically `urchade/gliner_multi-v2.1`) to accurately identify entities across different languages. Supports integration with AraBERT and CAMEL for specialized Arabic NER.
-- **Topic Generation & Extraction:** Utilizes Large Language Models (LLMs) to dynamically extract the main topics discussed in an article.
-- **Sentiment Analysis:** Analyzes the emotional tone of the articles using state-of-the-art transformer and LLM models, categorizing them and scoring the sentiment.
-
-### 3. High-Performance Architecture
-- **Two-Stage Execution Pipeline:** 
-  - **CPU Pass (`pipeline/cpu_pass.py`):** Handles lightweight tasks like language detection, preprocessing, and timing benchmarks.
-  - **GPU Pass (`pipeline/gpu_pass.py`):** Offloads heavy deep-learning inferences (Transformers, LLMs) to the GPU, operating model-by-model to prevent Out-Of-Memory (OOM) crashes.
-- **Benchmarking Tools:** Built-in benchmarking to track CPU and GPU inference times, ensuring models are running efficiently and identifying hardware bottlenecks (e.g., handling CUDA assertions).
-
-### 4. Advanced Analytics & Trend Detection
-- **Analytics Engine (`analysis/`):** Generates reports on global entity frequencies, tracks the top entities by month (`entities_by_month.py`), and breaks them down by country (`top_entities_by_country.py`).
-- **Peak Detection (`topic_peaks.py`):** Identifies statistical "peaks" (using z-score thresholds) in entity or topic mentions over rolling time windows, enabling the discovery of trending news stories or sudden global events.
+All results are written back to MySQL. A second optional pass using Qwen 2.5 (via Ollama) runs sentiment and topic inference for cross-model comparison.
 
 ---
 
-## 📊 Database Schema & Enriched Data Tables
+## Architecture Overview
 
-The pipeline stores processed results in a series of relational MySQL tables managed via SQLAlchemy. These tables link the original raw dataset with the NLP model predictions.
-
-### 1. Enriched Pipeline Tables
-* **`articles_enriched`**: Serves as the central repository for the pipeline results.
-  * **Columns:** `article_id` (Primary Key), `language`, `sentiment_label`, and multiple CPU/GPU processing latency metrics (`cpu_time_ner`, `gpu_time_sentiment`, etc.).
-* **`entities`**: The global unique entity vocabulary list.
-  * **Columns:** `entity_id` (Primary Key), `entity_name`, `entity_type`, `normalized_name`, and a global `frequency` count. It enforces unique constraints on the combination of `(entity_type, normalized_name)`.
-* **`article_entities`**: A relational junction table connecting articles and their extracted entities.
-  * **Columns:** `(article_id, entity_id, model_version)` as a Composite Primary Key, and `confidence_score`.
-* **`article_topics`**: Stores the LLM-extracted topic for each article.
-  * **Columns:** `article_id` (Primary Key) and `topic_label`.
-
-### 2. Original Raw Table Integrations
-The pipeline reads raw input data from original tables:
-* **`article`**: The source table representing original articles. The pipeline relies on its metadata columns:
-  * `id` — Unique identifier.
-  * `crawl_date` — Primary timestamp for trend bucketing.
-  * `year` / `month` — Fallback date indicators if `crawl_date` is empty or corrupted.
-  * `id_countries` — Relational mapping to identify geographical distributions.
-* **`country`**: Map-reference table supplying names for country-based reporting:
-  * `id` — Country ID.
-  * `label_en` / `label_fr` / `label_ar` — Multilingual name labels.
-
----
-
-## 📈 Analytical & Benchmarking Modules (`analysis/`)
-
-The `analysis/` folder aggregates raw article metadata and pipeline outputs to generate CSV reports.
-
-* **`entities_by_month.py`**: Buckets articles chronologically based on `crawl_date` (or `year`/`month` fallback). Extracts top-K entities for each month based on distinct article counts and mention frequencies.
-* **`top_entities_by_country.py`**: Explodes the `id_countries` values from the original article table, joins them against the `country` table, and computes top-K entities globally per country.
-* **`topics_by_month.py`**: Computes the distribution share of each topic dynamically per month, identifying the single "Dominant Topic" of each month.
-* **`topic_peaks.py`**: Detects statistical anomalies in topic shares using a rolling z-score. An anomaly/peak is flagged when a topic's share rises above a rolling average by `2.5` standard deviations.
-* **`ner_comparison.py`**: Evaluates agreement between different NER models (like AraBERT vs CamelBERT in Arabic) and produces a label distribution (PER, ORG, LOC, DAT, EVE, MIS, PRO, COM) and confidence stats.
-* **`sentiment_comparison.py`**: Computes sentiment distributions (POS, NEG, NEU, MIX) per model and language, tracking model agreement percentages.
-* **`timing_comparison.py`**: Aggregates CPU and GPU inference times per model, outputting speedup ratios (e.g., how many times faster GPU processing was vs CPU).
+`
+main.py
+  |
+  |-- STAGE 1 - pipeline/sampler.py
+  |     |-- Fetch N unprocessed articles from article table
+  |     |     (WHERE sentiment_label IS NULL in articles_enriched)
+  |     |-- Language detection via fast-langdetect (fastText)
+  |     |-- Filter: supported langs [ar, en, fr] + score >= 0.51
+  |     |     \-- Unsupported / low-score -> SKIPPED (language = NULL)
+  |     |-- Preprocess text for NER / sentiment / topic
+  |     \-- Empty-after-preprocess -> also SKIPPED (language = NULL)
+  |
+  |-- STAGE 2 - pipeline/gpu_pass.py  (model-by-model to prevent OOM)
+  |     |-- NER  -> GLiNER (multilingual)
+  |     |-- Sentiment -> Fine-tuned BERT [ar / en / fr]
+  |     |-- Topic     -> Fine-tuned BERT [ar / en / fr]
+  |     \-- Writes to DB: articles_enriched, article_entities,
+  |                        article_topics, benchmark_results
+  |
+  |-- STAGE 3 - Qwen pass  (optional, RUN_QWEN=True)
+  |     \-- Ollama HTTP -> qwen_articles_enriched, qwen_article_topics
+  |
+  \-- STAGE 4 - analysis/report_generator.py  (optional)
+        \-- CSV reports: entity trends, topic peaks, sentiment comparison
+`
 
 ---
 
-## 🗂️ Language Separation & Data Processing Workflow (`data_seperation/`)
+## Fine-Tuned Models
 
-To support annotation campaigns and dialectal research, the repository contains tools in the `data_seperation/` folder to clean, filter, and balance datasets:
+All fine-tuned models live under finetuned_models/ and are loaded via HuggingFace transformers:
 
-* **`fetch_texts.py`**: Separates raw articles into individual language files:
-  * **Language Identification:** Uses FastText to categorize text into English, French, Arabic, Mixed, or Rejected.
-  * **Quality Gates:** Filters out articles that are too short (<= 2 words), have low language confidence scores, or fail alpha-ratio threshold checks.
-  * **Arabic Ratio Check:** Measures the ratio of Arabic Unicode characters to classify pure Arabic texts vs Mixed scripts.
-  * **Resume Logic:** Automatically tracks already-processed lines to resume separation if interrupted.
-* **`split_dataset.py`**: Splits separated language files (like `arabic_texts.csv`) into balanced, equal-sized chunks to distribute workloads among annotators.
-* **`check_dialect/ensemble_annotator.py`**: A multi-model ensemble system classifying Arabic text as Modern Standard Arabic (MSA) or Dialectal Arabic (Egyptian, Levantine, Gulf, Maghrebi).
+| Folder | Task | Language | Architecture |
+|--------|------|----------|-------------|
+| ARABIC SENTIMENT | Sentiment | Arabic | BERT (3-class) |
+| ENGLISH SENTIMENT | Sentiment | English | BERT (3-class) |
+| FRENSH SENTIMENT | Sentiment | French | BERT (3-class) |
+| ARABIC TOPIC | Topic | Arabic | BERT (18-class) |
+| ENGLSIH TOPIC | Topic | English | BERT (18-class) |
+| FRENSH TOPIC | Topic | French | BERT (18-class) |
+
+### Topic Categories (18)
+Politics, Conflict, Economy, Diplomacy, Security, Elections, Religion, Sports, Health, Technology, Energy, Environment, Migration, Culture, Weather, Infrastructure, Justice, General
+
+### Sentiment Labels
+- POSITIVE - Favourable / optimistic tone
+- NEGATIVE - Critical / alarming tone
+- NEUTRAL  - Informational / balanced tone
+- SKIPPED  - Filtered before inference (unsupported language, low confidence, or empty after preprocessing). language column is NULL.
 
 ---
 
-## 📂 Codebase Structure
+## Database Schema
 
-```text
+### articles_enriched - Central results table
+| Column | Type | Description |
+|--------|------|-------------|
+| article_id | BIGINT PK | Links to raw article.id |
+| language | VARCHAR(10) | ar / en / fr / NULL (SKIPPED) |
+| sentiment_label | VARCHAR(10) | POSITIVE / NEGATIVE / NEUTRAL / NULL |
+| sentiment_score | FLOAT | Inference confidence score (0.0 to 1.0) |
+| gpu_time_ner | BIGINT | NER inference time (ms) |
+| gpu_time_sentiment | BIGINT | Sentiment inference time (ms) |
+| gpu_time_topic | BIGINT | Topic inference time (ms) |
+
+### benchmark_results - Per-article inference benchmarks (BERT models)
+| Column | Type | Description |
+|--------|------|-------------|
+| article_id | BIGINT | Article reference |
+| task | VARCHAR(20) | sentiment / topic / ner |
+| model_id | TINYINT | Numeric model ID (see Config.MODEL_ID_MAP) |
+| language | VARCHAR(10) | ar / en / fr |
+| device | VARCHAR(10) | GPU |
+| total_inf_time_sec | DOUBLE | Inference time for this article (seconds) |
+| avg_ms_per_doc | DOUBLE | Average ms across articles of that lang in the batch |
+| peak_gpu_mb | DOUBLE | Peak GPU memory (if measured) |
+
+Model ID mapping (Config.MODEL_ID_MAP):
+
+| ID | Key | Task |
+|----|-----|------|
+| 0 | hatmimoha/arabic-ner | NER (Arabic AraBERT) |
+| 1 | CAMeL-Lab/bert-base-arabic-camelbert-msa-ner | NER (Arabic CAMeL) |
+| 2 | dslim/bert-base-NER | NER (English) |
+| 3 | Jean-Baptiste/camembert-ner | NER (French) |
+| 4 | urchade/gliner_multi-v2.1 | NER (Multilingual GLiNER) |
+| 5 | ar_sentiment_ft | Sentiment (Arabic Fine-tuned) |
+| 6 | en_sentiment_ft | Sentiment (English Fine-tuned) |
+| 7 | fr_sentiment_ft | Sentiment (French Fine-tuned) |
+| 8 | ar_topic_ft | Topic (Arabic Fine-tuned) |
+| 9 | en_topic_ft | Topic (English Fine-tuned) |
+| 10 | fr_topic_ft | Topic (French Fine-tuned) |
+| 11 | qwen2.5:7b | Qwen (Ollama) |
+
+### article_topics - Topic per article
+| Column | Type | Description |
+|--------|------|-------------|
+| article_id | BIGINT PK | Links to article.id |
+| topic_label | VARCHAR(100) | One of the 18 categories |
+| topic_score | FLOAT | Inference confidence score (0.0 to 1.0) |
+
+### entities - Global entity vocabulary
+| Column | Type | Description |
+|--------|------|-------------|
+| entity_id | BIGINT PK | Auto-increment |
+| entity_name | VARCHAR(1024) | Raw extracted text |
+| entity_type | VARCHAR(20) | PER / ORG / LOC / UNK |
+| normalized_name | VARCHAR(512) | Lowercased + stripped form |
+| frequency | INT | Total mentions across all articles |
+
+### article_entities - Article to Entity links
+| Column | Type | Description |
+|--------|------|-------------|
+| article_id | BIGINT | Article reference |
+| entity_id | BIGINT | Entity reference |
+| model_version | TINYINT | NER model version used |
+| confidence_score | FLOAT | GLiNER confidence |
+
+### Qwen parallel tables
+- qwen_articles_enriched - mirrors articles_enriched for Qwen results
+- qwen_article_topics - mirrors article_topics for Qwen results
+- qwen_benchmark_results - mirrors benchmark_results for Qwen
+
+---
+
+## Codebase Structure
+
+`
 PROJET_PFE/
-│
-├── main.py                     # Entry point of the application
-├── requirements.txt            # Python dependencies (PyTorch, Transformers, GLiNER, Spacy, etc.)
-│
-├── src/                        # Core Logic & Utilities
-│   ├── config.py / db_config.py# Application and database configuration (SQLAlchemy)
-│   ├── ner_extraction.py       # Wrapper for GLiNER and other NER models
-│   ├── sentiment_analysis.py   # Wrapper for Sentiment LLMs/Transformers
-│   ├── topic_generation.py     # Wrapper for Topic Extraction models
-│   ├── language_detection.py   # FastText-based language identification
-│   └── preprocessing/          # Language-specific text cleaning rules (arabic.py, latin.py, router.py)
-│
-├── pipeline/                   # Execution Workflow
-│   ├── sampler.py              # Fetches and samples articles from the database
-│   ├── cpu_pass.py             # Execution stage for lightweight operations
-│   ├── gpu_pass.py             # Execution stage for heavy AI inference
-│   └── exporter.py             # Exports results to CSV for manual validation
-│
-├── analysis/                   # Reporting and Statistical Analysis
-│   ├── report_generator.py     # Main generator for analytics CSVs
-│   ├── entities_by_month.py    # Tracks entity frequency over time
-│   ├── topic_peaks.py          # Detects anomalies/spikes in topic trends
-│   ├── top_entities_by_country.py # Segment entities by geographical origin
-│   ├── ner_comparison.py       # Computes NER model metrics and label distributions
-│   ├── sentiment_comparison.py # Compares sentiment labels and agreement percentages
-│   └── timing_comparison.py    # Analyzes CPU/GPU timing and speedups
-│
-├── data_seperation/            # Scripts for separating data by language for annotation
-│   ├── fetch_texts.py          # FastText separation and resume pipeline
-│   ├── split_dataset.py        # Balances datasets into workload chunks
-│   └── check_dialect/          # Ensemble Arabic dialect annotator (MSA vs Dialectal)
-│
-└── results/                    # Directory where output CSVs and benchmark reports are saved
-```
+|
+|-- main.py                        # Entry point - configures and runs the full pipeline
+|-- requirements.txt               # Python dependencies
+|-- .env.local                     # DB credentials (not committed)
+|
+|-- finetuned_models/              # Fine-tuned BERT models (loaded by transformers)
+|   |-- ARABIC SENTIMENT/
+|   |-- ENGLISH SENTIMENT/
+|   |-- FRENSH SENTIMENT/
+|   |-- ARABIC TOPIC/
+|   |-- ENGLSIH TOPIC/
+|   \-- FRENSH TOPIC/
+|
+|-- src/                           # Core logic and utilities
+|   |-- config/                    # Centralized modular configuration package
+|   |   |-- base.py                # Environment loading, project paths, logging/hardware defaults
+|   |   |-- db.py                  # Database connection settings & table definitions
+|   |   |-- models.py              # Model paths, registry maps & global MODEL_ID_MAP
+|   |   |-- pipeline.py            # Execution switches & quality gates
+|   |   |-- hyperparameters.py     # Task-specific hyperparameters
+|   |   |-- heuristics.py          # Domain cues, question starters, topic taxonomy
+|   |   |-- preprocessing.py       # Arabic & Latin preprocessing presets
+|   |   |-- qwen.py                # Ollama & Qwen LLM settings
+|   |   \-- __init__.py            # Aggregated Config class & re-exports
+|   |-- db_config.py               # SQLAlchemy connection, table creation, all upsert methods
+|   |-- ner_extraction.py          # GLiNER + TransformersNER wrappers
+|   |-- sentiment_extraction.py    # LLMSentiment - per-language BERT pipeline wrapper
+|   |-- topic_extraction.py        # TransformerTopic + LLMTopic wrappers
+|   |-- language_detection.py      # fast-langdetect wrapper
+|   |-- text_utils.py              # Arabic console reshaping (arabic_reshaper + python-bidi)
+|   \-- preprocessing/
+|       |-- router.py              # Routes text to Arabic or Latin preprocessor
+|       |-- arabic.py              # Arabic normalization (diacritics, ligatures, noise)
+|       \-- latin.py              # French/English normalization
+|
+|-- pipeline/                      # Execution workflow
+|   |-- sampler.py                 # Stage 1: fetch, lang-detect, filter, preprocess
+|   \-- gpu_pass.py               # Stage 2: NER + Sentiment + Topic GPU inference + DB writes
+|
+|-- src/qwen/                      # Qwen (Ollama) inference pass
+|   |-- run_qwen_pass.py
+|   |-- sentiment_extraction.py
+|   \-- topic_extraction.py
+|
+|-- analysis/                      # Reporting and analytics
+|   |-- report_generator.py        # Orchestrates all report scripts
+|   |-- entities_by_month.py       # Top entities per month
+|   |-- top_entities_by_country.py # Top entities per country
+|   |-- topics_by_month.py         # Topic distribution over time
+|   |-- topic_peaks.py             # Z-score spike detection on topic shares
+|   \-- sentiment_comparison.py   # BERT vs Qwen sentiment agreement
+|
+\-- scripts/                      # Standalone utilities
+    \-- ressources/
+        \-- master_benchmark.py   # Standalone benchmark runner
+`
 
 ---
 
-## 🛠️ Technology Stack
-- **Deep Learning / NLP:** PyTorch, HuggingFace Transformers, GLiNER, SpaCy, NLTK, FastText.
-- **Data Processing:** Pandas, NumPy, Scikit-learn.
-- **Database:** MySQL, SQLAlchemy (PyMySQL).
-- **Logging & System:** Python `logging`, `platform`, `psutil`.
+## Technology Stack
+
+| Category | Libraries |
+|----------|-----------|
+| Deep Learning | PyTorch 2.5+, HuggingFace Transformers 5.x, GLiNER |
+| NLP Utilities | fast-langdetect (fastText), arabic-reshaper, python-bidi |
+| Data | Pandas 3.x, NumPy |
+| Database | MySQL, SQLAlchemy 2.x, PyMySQL |
+| Inference server | Ollama (Qwen 2.5:7b, optional) |
+| System | Python 3.11, CUDA 12.1 |
 
 ---
 
-## ⚙️ How It Works (The Pipeline Flow)
-1. **Sampling:** `main.py` initiates a run by pulling a sample (e.g., 1000 articles) from the database via `sampler.py`.
-2. **Preprocessing:** Text is routed to `preprocessing/router.py` based on its detected language, where it is thoroughly cleaned.
-3. **Inference (GPU):** The cleaned text is passed to NER, Sentiment, and Topic models sequentially in `gpu_pass.py`.
-4. **Export & Results:** The extracted entities, sentiments, and topics are written back to the database. Additionally, `exporter.py` outputs CSVs (`gliner_ner_results.csv`, `topic_sentiment_results.csv`) to a timestamped directory in `results/`.
-5. **Analytics:** The `analysis/report_generator.py` aggregates the database results to find trends and anomalies.
+## Pipeline Flow - Step by Step
+
+1. Sampling (sampler.py): pulls up to sample_size rows from article where articles_enriched.sentiment_label IS NULL (unprocessed). Articles with unsupported language, low confidence, or empty body after preprocessing are immediately written as SKIPPED with language = NULL and will not be re-fetched.
+
+2. GPU Inference (gpu_pass.py): models are loaded and unloaded one at a time (model-by-model strategy) to avoid VRAM OOM. Order: NER then Sentiment then Topic. A 1-second GPU cooldown runs between model groups.
+
+3. DB Writes: after inference, results are upserted into articles_enriched, article_topics, article_entities, and benchmark_results.
+
+4. Qwen Pass (optional, RUN_QWEN = True in main.py): sends the same preprocessed texts to a local Ollama server for independent sentiment + topic prediction stored in qwen_* tables.
+
+5. Analytics (optional, GENERATE_REPORTS = True in main.py): aggregates DB results to produce trend and comparison CSVs in analysis/reports/.
 
 ---
 
-## Detailed Preprocessing (Arabic & Latin)
+## Sentinel Labels
 
-This project contains robust, language-specific preprocessing implemented in `src/preprocessing/arabic.py` and `src/preprocessing/latin.py`. Both are flag-driven preprocessors that can be tuned for NER, topic, or sentiment tasks.
+| sentiment_label | language | Meaning |
+|-----------------|---------|---------|
+| POSITIVE | ar/en/fr | Valid positive prediction |
+| NEGATIVE | ar/en/fr | Valid negative prediction |
+| NEUTRAL | ar/en/fr | Valid neutral prediction |
+| SKIPPED | NULL | Filtered before inference (unsupported lang / empty text) |
+| NULL (DB) | ar/en/fr | Placeholder - processing queued but not yet run |
 
-### Arabic preprocessing highlights (`src/preprocessing/arabic.py`)
-- Unicode normalization and Arabic letter canonicalization (`أ/إ/آ -> ا`, `ة -> ه`, `ى -> ي`).
-- Diacritics and Tatweel removal to reduce noise.
-- URL/email removal and HTTP fragment filtering.
-- Optional removal of Arabic-Indic and Western digits.
-- Decorative noise removal (box drawing, dingbats, replacement chars, Arabic zero `٠`).
-- Social spam line detection/removal using Franco‑Arabic decorative char heuristics.
-- Loose bracket collapse and unmatched bracket stripping while preserving balanced pairs.
-- `fix_merged_keywords()` splits merged tokens for keywords like `ليبيا`, `للبيع`, `للإيجار`, and now `طرابلس` (Tripoli), avoiding accidental splits of single-letter prefixes.
-- Punctuation normalization with de-duplication and enforced single-space around internal periods (`.`).
-
-### Latin preprocessing highlights (`src/preprocessing/latin.py`)
-- Normalizes typographic quotes and dashes, deduplicates repeated punctuation.
-- Decorative and unicode junk removal.
-- Two modes for social content: placeholders for sentiment (`http`, `@user`, `email`) or full removal for NER/topic.
-- CamelCase hashtag splitting for long tokens.
-- Enforces the same one-space-around-internal-period rule as Arabic for consistency.
-
-These preprocessors are designed to preserve entity spans and linguistic signals while removing social/decorative noise that harms extraction quality.
+Console alerts: if a model ever produces a label outside [POSITIVE, NEGATIVE, NEUTRAL], a [!] SENTIMENT UNK DETECTED block is printed. Arabic text is reshaped with arabic_reshaper + python-bidi for correct RTL display in the Windows console.
 
 ---
 
-## Qwen (Ollama) compatibility — important note
+## Key Configuration (main.py flags)
 
-- Qwen is integrated via Ollama HTTP calls (see `BenchLLM` in `scripts/ressources/master_benchmark.py` and `src/topic_generation.py`). Ollama runs as a separate server process and manages model VRAM itself.
-- Consequences:
-  - The Python benchmark measures only local process memory (`psutil`) and `torch.cuda.memory_allocated()` inside the Python process. If Qwen runs inside Ollama, you will see `Peak GPU = 0.0MB` for the Python process even though the model uses GPU on the Ollama server.
-  - `Load Time = 0.00s` for Qwen in the Python benchmark indicates the Python-side object initialization is trivial; the model lifecycle is handled by Ollama.
+`python
+RUN_NER           = True    # Enable/disable NER pass
+RUN_SENTIMENT     = True    # Enable/disable Sentiment pass
+RUN_TOPIC         = True    # Enable/disable Topic pass
+RUN_QWEN          = False   # Enable Qwen (Ollama) comparison pass
+GENERATE_REPORTS  = False   # Generate analytics CSVs after inference
 
-Conclusion: the `analysis/` scripts WILL run with Qwen provided the Ollama service is running and the Qwen model is available on the server. If Ollama is not running or the model is missing, Qwen-backed steps will either be skipped or appear as zero/placeholder metrics in the generated reports.
+sample_size       = 500     # Number of articles per run
+`
 
 ---
 
-## Quick Run Commands
+## Quick Start
 
-Activate your Python environment, install dependencies, then run:
+`ash
+# 1. Activate the virtual environment
+.env\Scripts\activate          # Windows
 
-```bash
+# 2. Install dependencies
+pip install -r requirements.txt
+
+# 3. Configure DB credentials in .env.local
+# DB_HOST=localhost  DB_PORT=3306  DB_USER=root  DB_PASSWORD=...  DB_NAME=webradar_libya_nlp_tmp
+
+# 4. Run the pipeline (adjust sample_size in main.py)
 python main.py
-```
 
-For benchmarks only:
+# 5. (Optional) Qwen pass - requires Ollama running with qwen2.5:7b
+# ollama serve  &&  ollama pull qwen2.5:7b
+# Then set RUN_QWEN = True in main.py
 
-```bash
-python scripts/ressources/master_benchmark.py
-python scripts/run_all_models.py
-```
-
-For analysis reports:
-
-```bash
-python analysis/report_generator.py
-```
+# 6. (Optional) Generate analytics reports
+# Set GENERATE_REPORTS = True in main.py
+`
 
 ---
 
-## Recommended Next Steps
+## Qwen (Ollama) - Important Note
 
-- Add unit tests for `fix_merged_keywords()` and the dot-space normalization.
-- If using Ollama locally, add an optional `nvidia-smi` sampler or Ollama API integration to capture server-side GPU memory for more accurate benchmarks.
-- Add example input/output snippets to `README.md` or `docs/` to show the effect of preprocessing on typical tweets/articles.
+Qwen runs via Ollama HTTP (localhost:11434), not inside the Python process. This means:
+- peak_gpu_mb will be 0.0 in qwen_benchmark_results - VRAM is managed by the Ollama server, invisible to torch.cuda.memory_allocated().
+- load_time_sec is near 0 - Ollama manages model lifecycle; the Python object is a lightweight HTTP client.
+- If Ollama is not running, the Qwen pass is skipped with a logged error. The BERT pipeline results are unaffected.
+
+---
+
+## Preprocessing Details
+
+### Arabic (src/preprocessing/arabic.py)
+- Unicode normalization and Arabic letter canonicalization (alef variants -> alef, teh marbuta -> ha, alef maqsura -> ya)
+- Diacritics (tashkeel) and Tatweel removal
+- URL/email/HTTP fragment removal
+- Decorative noise removal (box drawing, dingbats, Arabic zero)
+- Social spam line detection using Franco-Arabic heuristics
+- fix_merged_keywords() splits merged tokens for common keywords (Libya, Tripoli, for sale, etc.)
+- Punctuation normalization and de-duplication
+
+### Latin (src/preprocessing/latin.py)
+- Typographic quote and dash normalization
+- Decorative and unicode junk removal
+- Social content placeholders for sentiment (http, @user, email) or full removal for NER/topic
+- CamelCase hashtag splitting
+- Consistent single-space around internal periods

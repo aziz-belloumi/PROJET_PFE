@@ -5,9 +5,8 @@ Stage 2 — CPU Timing Pass
 Loads all NER and Sentiment models on CPU and runs inference on every article
 in work_df purely to record timing. Results are discarded.
 
-Topic timing is omitted from the CPU pass because the new per-article
-topic extractors (BARTTopic, FlanT5Topic) are GPU-only and measured
-exclusively in the GPU pass.
+Topic timing is omitted from the CPU pass because the zero-shot topic
+classifier (LLMTopic) is GPU-only and measured exclusively in the GPU pass.
 
 Returns:
     cpu_time_ner_ms       — dict[(article_id, model_version), int]  milliseconds
@@ -26,8 +25,9 @@ import pandas as pd
 import torch
 
 from src.config import Config
-from src.ner_extraction import TransformersNER, DEFAULT_NER_PARAMS
-from src.sentiment_analysis import LLMSentiment, DEFAULT_SENTIMENT_PARAMS
+from src.ner_extraction import TransformersNER
+from src.sentiment_extraction import LLMSentiment
+from src.topic_extraction import LLMTopic
 
 
 def run_cpu_pass(
@@ -62,10 +62,10 @@ def run_cpu_pass(
 
     logger.info("=== CPU PASS (TIMING ONLY) ===")
 
-    # ---- Load models ----
+    # ---- Load GLiNER NER models ----
     ner_cpu_models_by_lang = {
         lang: [
-            (mv, TransformersNER(model_name=name, logger=logger, preprocessor=None, device=cpu_device, **ner_params))
+            (mv, GLiNERNER(model_name=name, logger=logger, device=cpu_device))
             for mv, name in models
         ]
         for lang, models in ner_models_by_lang.items()
@@ -87,7 +87,7 @@ def run_cpu_pass(
 
             for mv, model in ner_cpu_models_by_lang.get(lang, []):
                 t0 = time.perf_counter()
-                _ = model.predict(r.text_ner)
+                _ = model.predict(r.text_ner, language=lang)
                 cpu_time_ner_ms[(aid, mv)] = cpu_time_ner_ms.get((aid, mv), 0) + int((time.perf_counter() - t0) * 1000)
 
             for mv, model in sent_cpu_models_by_lang.get(lang, []):
