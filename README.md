@@ -14,10 +14,19 @@ A clean, modular two-phase pipeline for building a large-scale, human-annotated 
 
 | File | Path | Columns | Records | Description |
 | :--- | :--- | :--- | ---: | :--- |
-| **`global_data.csv`** | `data_exploration/global_data.csv` | `id`, `text`, `language` | 1,484,845 | Clean preprocessed articles (language: `ar`, `en`, `fr`). |
-| **`global_data_libelised.csv`** | `data_libelisation/global_data_libelised.csv` | `id`, `text`, `language`, `sentiment`, `topic` | 1,484,845 | Fully human-annotated — **3 sentiment classes** × **18 topic categories**. |
+| **`global_data.csv`** | `data_exploration/global_data.csv` | `id`, `text`, `language` | 1,484,845 | Clean preprocessed articles (language: `da`, `ar`, `en`, `fr`). |
+| **`global_data_libelised.csv`** | `data_libelisation/global_data_libelised.csv` | `id`, `text`, `language`, `sentiment`, `topic` | 1,484,845 | Fully human-annotated — **3 sentiment classes** × **18 topic categories** with Dialectal (`da`) and MSA (`ar`) distinction. |
 
 ### Taxonomy
+
+**Language Tags:**
+
+| Tag | Language Variety | Description |
+| :---: | :--- | :--- |
+| `da` | Dialectal Arabic | Egyptian, Gulf, Levantine, Maghrebi dialects |
+| `ar` | Modern Standard Arabic | Standard / Classical Arabic news (MSA) |
+| `en` | English | English articles |
+| `fr` | French | French articles |
 
 **Sentiment Classes (3):**
 
@@ -160,25 +169,24 @@ Terminal-based annotation tool with Arabic RTL rendering support.
 
 **Features:**
 - **Arabic BiDi Rendering**: `arabic_reshaper` + `python-bidi` for correct Right-to-Left cursive display in Windows terminal.
-- **Dual-Task Labeling**: Sentiment `[1/2/3]` and Topic `[0-17]` — sequential prompts, auto-skips completed tasks.
+- **Arabic Variety Selection**: Prompts `[1] da  [2] ar` for Arabic articles at the first step to distinguish Dialectal Arabic (`da`) from Modern Standard Arabic (`ar`).
+- **Multi-Task Labeling**: Language Variety (`[1] da / [2] ar`), Topic `[0-17]`, and Sentiment `[1/2/3]` — sequential prompts, auto-skips completed tasks.
 - **Smart Resume**: Scans `global_data_libelised.csv` on startup, isolates only unlabeled articles, and starts directly there.
-- **Zero-Lag Saves**: Labels are stored in memory instantly, flushed to disk only when the session ends or the queue is fully processed.
+- **Zero-Lag Saves**: Labels and language tags are stored in memory instantly, flushed to disk only when the session ends or the queue is fully processed.
 - **Automatic Plots**: On 100% completion, generates 4 summary charts to `data_libelisation/plots/`.
 
 ```bash
 # Run annotator (auto-resumes from first unlabeled article)
 python data_libelisation/cli_annotator.py
-
-# Force regenerate summary plots from current annotations
-python data_libelisation/cli_annotator.py --force-plots
 ```
 
 **In-Session Commands:**
 
 | Input | Action |
 | :--- | :--- |
-| `1` / `2` / `3` | Assign POSITIVE / NEGATIVE / NEUTRAL sentiment |
+| `1` / `2` | Select Arabic Variety (`1`: `da` Dialectal, `2`: `ar` MSA) when prompted |
 | `0`–`17` | Assign topic category |
+| `1` / `2` / `3` | Assign POSITIVE / NEGATIVE / NEUTRAL sentiment |
 | `s` or `n` | Skip current article |
 | `u` or `b` | Undo (go back one article) |
 | `q` | Quit and save all progress |

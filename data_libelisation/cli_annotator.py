@@ -5,7 +5,8 @@ Interactive CLI Annotator for Multilingual News Articles (Arabic, English, Frenc
 ================================================================================
 Simple, fast console annotator that searches directly for unlibeled articles:
   - Scans global_data_libelised.csv and isolates only the unlibeled articles
-  - Prompts directly for missing label by number [1: Pos, 2: Neg, 3: Neu]
+  - Prompts for Arabic variety [1: da, 2: ar] for Arabic texts
+  - Prompts for Topic [0-17] and Sentiment [1: Pos, 2: Neg, 3: Neu]
   - Saves progress immediately to global_data_libelised.csv
   - Generates final plots to data_libelisation/plots/ when 100% finished
 
@@ -296,11 +297,13 @@ class CLIAnnotator:
         if tmp_file.exists():
             shutil.move(str(tmp_file), str(self.output_path))
 
-    def _save_single_label(self, aid: str, sentiment: str, topic: str):
+    def _save_single_label(self, aid: str, sentiment: str, topic: str, language: Optional[str] = None):
         """Updates in-memory record instantly (0ms latency)."""
         if aid in self.all_data_map:
             self.all_data_map[aid]["sentiment"] = sentiment
             self.all_data_map[aid]["topic"] = topic
+            if language:
+                self.all_data_map[aid]["language"] = language
         self.dirty = True
 
     # ==========================================================================
@@ -319,6 +322,11 @@ class CLIAnnotator:
         print(f"  MULTILINGUAL NEWS CLI ANNOTATOR (AR / EN / FR)")
         print(f"  Overall Progress: {completed:,} / {total:,} ({pct:.3f}%) | Remaining: {remaining:,}")
         print("=" * 75)
+
+    def print_arabic_variety_menu(self):
+        print("\n--- ARABIC VARIETY ---")
+        print("  [1] da (Dialectal / لهجة)    [2] ar (Standard MSA / فصحى)")
+        print("\nCommands: [s] Skip | [u] Undo | [q] Quit")
 
     def print_topics_menu(self):
         print("\n--- TOPIC CATEGORIES (18) ---")
@@ -503,6 +511,8 @@ class CLIAnnotator:
             data = self.all_data_map.get(aid, row)
             top = data.get("topic", "")
             sent = data.get("sentiment", "")
+            curr_lang = (data.get("language") or "").strip().lower()
+            is_arabic = curr_lang in ("ar", "da") or bool(ARABIC_CHAR_PATTERN.search(data.get("text", "")))
 
             # If already completed in this session, skip
             if top and sent:
@@ -544,6 +554,31 @@ class CLIAnnotator:
 
             # Case 2: Sentiment exists -> ONLY Topic needed
             elif sent and not top:
+                chosen_lang = curr_lang
+                if is_arabic:
+                    self.print_arabic_variety_menu()
+                    lang_inp = input(f"\nSelect Arabic Type [1] da  [2] ar for Article #{aid}: ").strip()
+                    if not lang_inp:
+                        continue
+                    cmd = lang_inp.lower()
+                    if cmd in ("q", "quit", "exit"):
+                        self._save_all_to_csv()
+                        return
+                    if cmd in ("s", "skip", "next", "n"):
+                        self.current_queue_idx += 1
+                        continue
+                    if cmd in ("u", "undo", "prev", "p", "b", "back"):
+                        self.current_queue_idx = max(0, self.current_queue_idx - 1)
+                        continue
+                    if cmd in ("1", "da"):
+                        chosen_lang = "da"
+                    elif cmd in ("2", "ar"):
+                        chosen_lang = "ar"
+                    else:
+                        print("Invalid choice. Please enter [1] da or [2] ar.")
+                        input("Press Enter to continue...")
+                        continue
+
                 self.print_topics_menu()
                 user_inp = input(f"\nSelect Topic [0-17] for Article #{aid}: ").strip()
                 if not user_inp:
@@ -564,7 +599,7 @@ class CLIAnnotator:
 
                 chosen_top = normalize_topic_code(user_inp)
                 if chosen_top:
-                    self._save_single_label(aid, sent, chosen_top)
+                    self._save_single_label(aid, sent, chosen_top, language=chosen_lang)
                     self.history.append(aid)
                     self.current_queue_idx += 1
                 else:
@@ -573,8 +608,35 @@ class CLIAnnotator:
 
             # Case 3: Both needed
             else:
+                chosen_lang = curr_lang
+                # Dialect option for Arabic articles during the first task (topic labeling phase)
+                if is_arabic:
+                    self.print_arabic_variety_menu()
+                    lang_inp = input(f"\n[1/3] Select Arabic Type [1] da  [2] ar for Article #{aid}: ").strip()
+                    if not lang_inp:
+                        continue
+                    cmd = lang_inp.lower()
+                    if cmd in ("q", "quit", "exit"):
+                        self._save_all_to_csv()
+                        return
+                    if cmd in ("s", "skip", "next", "n"):
+                        self.current_queue_idx += 1
+                        continue
+                    if cmd in ("u", "undo", "prev", "p", "b", "back"):
+                        self.current_queue_idx = max(0, self.current_queue_idx - 1)
+                        continue
+                    if cmd in ("1", "da"):
+                        chosen_lang = "da"
+                    elif cmd in ("2", "ar"):
+                        chosen_lang = "ar"
+                    else:
+                        print("Invalid choice. Please enter [1] da or [2] ar.")
+                        input("Press Enter to continue...")
+                        continue
+
+                step_label = "[2/3]" if is_arabic else "[1/2]"
                 self.print_topics_menu()
-                user_inp = input(f"\n[1/2] Select Topic [0-17] for Article #{aid} (or combo '0 1'): ").strip()
+                user_inp = input(f"\n{step_label} Select Topic [0-17] for Article #{aid} (or combo '0 1'): ").strip()
                 if not user_inp:
                     continue
 
@@ -594,7 +656,7 @@ class CLIAnnotator:
                     t1 = normalize_topic_code(tokens[0])
                     s1 = SENTIMENTS.get(tokens[1].lower())
                     if t1 and s1:
-                        self._save_single_label(aid, s1, t1)
+                        self._save_single_label(aid, s1, t1, language=chosen_lang)
                         self.history.append(aid)
                         self.current_queue_idx += 1
                         continue
@@ -602,10 +664,11 @@ class CLIAnnotator:
                 t = normalize_topic_code(tokens[0])
                 if t:
                     self.print_sentiment_menu()
-                    s_inp = input(f"\n[2/2] Topic [{t}] selected. Select Sentiment [1: Pos, 2: Neg, 3: Neu]: ").strip()
+                    sentiment_step_label = "[3/3]" if is_arabic else "[2/2]"
+                    s_inp = input(f"\n{sentiment_step_label} Topic [{t}] selected. Select Sentiment [1: Pos, 2: Neg, 3: Neu]: ").strip()
                     s = SENTIMENTS.get(s_inp.lower())
                     if s:
-                        self._save_single_label(aid, s, t)
+                        self._save_single_label(aid, s, t, language=chosen_lang)
                         self.history.append(aid)
                         self.current_queue_idx += 1
                     else:
