@@ -7,7 +7,7 @@
 
 A modular, production-grade deep learning fine-tuning framework for **Sentiment Analysis** and **18-Category Topic Classification** across **Arabic**, **English**, and **French** news corpora.
 
-This repository consumes the human-annotated dataset (`fine_tune_data/global_data_merged.csv`, 1.48M+ articles) exported from **`Data_Exploring`**, fine-tunes domain-specific transformer architectures with focal loss, class weighting, sliding-window tokenisation, auto-resume mechanisms, and cross-lingual translation pipelines, then produces comprehensive evaluation artifacts and learning curves.
+This repository consumes the human-annotated dataset (`data/global_data_libelised.csv`, 1.48M+ articles) exported from **`Data_Exploring`**, fine-tunes domain-specific transformer architectures with focal loss, class weighting, sliding-window tokenisation, auto-resume mechanisms, and cross-lingual translation pipelines, then produces comprehensive evaluation artifacts and learning curves.
 
 ---
 
@@ -38,7 +38,7 @@ The entire fine-tuning pipeline relies on a single consolidated, human-annotated
 
 | Field | Path | Columns | Description |
 | :--- | :--- | :--- | :--- |
-| **Master Dataset** | `fine_tune_data/global_data_merged.csv` | `id`, `text`, `language`, `sentiment`, `topic` | Clean preprocessed and human-annotated news corpus across Arabic (`msa`, `egy`, `lev`, `glf`, `mgr`), English (`en`), and French (`fr`). |
+| **Master Dataset** | `data/global_data_libelised.csv` | `id`, `text`, `language`, `sentiment`, `topic` | Clean preprocessed and human-annotated news corpus across Modern Standard Arabic (`ar`), Dialectal Arabic (`da`), English (`en`), and French (`fr`). |
 
 ### 1. Sentiment Classes (3)
 | Class ID | Label | Interpretation |
@@ -66,14 +66,13 @@ The entire fine-tuning pipeline relies on a single consolidated, human-annotated
 
 ```text
 ┌────────────────────────────────────────────────────────────────────────────────┐
-│           fine_tune_data/global_data_merged.csv (1.48M+ rows)                  │
+│           data/global_data_libelised.csv (1.48M+ rows)                         │
 │           [Columns: id, text, language, sentiment, topic]                      │
 └──────────────────────┬──────────────────────────────┬──────────────────────────┘
                        │                              │
         ┌──────────────┼──────────────────┐           │
         ▼              ▼                  ▼           │
-  [Arabic (msa/     [English (en)]   [French (fr)]   │
-   egy/lev/glf/mgr]                                  │
+  [Arabic (ar / da)] [English (en)]   [French (fr)]   │
         │              │                  │           │
   ┌─────┴─────┐  ┌─────┴─────┐    ┌──────┴──────┐   │
   ▼           ▼  ▼           ▼    ▼             ▼   │
@@ -113,8 +112,8 @@ Fine_Tuning/
 ├── requirements.txt                       # Python dependencies
 ├── .gitignore                             # Git rules (excluding large CSVs & weights)
 │
-├── fine_tune_data/
-│   └── global_data_merged.csv             # Master human-annotated dataset (from Data_Exploring)
+├── data/
+│   └── global_data_libelised.csv              # Master human-annotated dataset (from Data_Exploring)
 │
 ├── training/                              # Fine-tuning pipelines
 │   ├── arabic/
@@ -153,12 +152,12 @@ Fine_Tuning/
 - **Script**: [`training/arabic/fine_tune_arabic_sentiment.py`](training/arabic/fine_tune_arabic_sentiment.py)
 - **Base Model**: `CAMeL-Lab/bert-base-arabic-camelbert-mix-sentiment`
 - **Architecture**: 12-layer Transformer, 768 hidden, 12 heads
-- **Language Variants Supported**: MSA, Egyptian (`egy`), Levantine (`lev`), Gulf (`glf`), Maghrebi (`mgr`)
+- **Language Variants Supported**: Modern Standard Arabic (`ar`), Dialectal Arabic (`da`)
 - **Key Techniques**:
   - **Sliding Window** tokenisation (`MAX_LEN=512`, `STRIDE=256`) for long documents
   - **Focal Loss** (`α=0.45`, `γ=2.5`) with dynamic class weights
   - **POSITIVE class augmentation** with Arabic intensifiers (`جداً`, `حقاً`, …)
-  - **MSA/Dialect stratified splits** for balanced evaluation
+  - **MSA (`ar`) / Dialect (`da`) stratified splits** for balanced evaluation
   - **Auto-resume** from latest valid checkpoint
 - **Hyperparameters**:
   - `MAX_LEN`: 512 | `STRIDE`: 256

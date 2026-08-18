@@ -53,8 +53,9 @@ warnings.filterwarnings("ignore")
 # ============================================================
 # ACCELERATION SETTINGS
 # ============================================================
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 TASK       = "topic_french"
-DATA_FILE  = "fine_tune_data/global_data_merged.csv"
+DATA_FILE  = PROJECT_ROOT / "data" / "global_data_libelised.csv"
 MODEL_NAME = "camembert/camembert-large"
 OUT_DIR = "experiments"
 

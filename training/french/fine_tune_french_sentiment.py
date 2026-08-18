@@ -54,10 +54,8 @@ if torch.cuda.is_available():
     print(f"📊 GPU: {torch.cuda.get_device_name(0)}")
     print(f"📊 GPU Memory: {torch.cuda.get_device_properties(0).total_memory / 1024**3:.1f} GB")
 
-# ============================================================
-# PATHS
-# ============================================================
-DATA_FILE = "fine_tune_data/global_data_merged.csv"
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+DATA_FILE = PROJECT_ROOT / "data" / "global_data_libelised.csv"
 BASE_DIR = Path(__file__).resolve().parent
 TRANSLATED_DATA_DIR = BASE_DIR / "translated_data"
 TRANSLATED_DATA_DIR.mkdir(parents=True, exist_ok=True)

@@ -25,12 +25,13 @@ from transformers import (
 )
 import gc
 
-TASK = "sentiment"
-DATA_FILE = "fine_tune_data/global_data_merged.csv"
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+DATA_FILE = PROJECT_ROOT / "data" / "global_data_libelised.csv"
+OUT_DIR = PROJECT_ROOT / "experiments"
+TASK = "arabic_sentiment"
 MODEL_NAME = "CAMeL-Lab/bert-base-arabic-camelbert-mix-sentiment"
-OUT_DIR = "experiments_final"
 
-VALID_LANG = {"msa", "egy", "lev", "glf", "mgr"}
+VALID_LANG = {"ar", "da"}
 
 # =======================
 # EXACT PARAMETERS FROM BEST VERSION (87.7% ACCURACY)
@@ -510,9 +511,8 @@ def main():
     set_seed(SEED)
     torch.backends.cuda.matmul.allow_tf32 = True
     torch.cuda.empty_cache() if torch.cuda.is_available() else None
-    base = Path(__file__).resolve().parent
     
-    base_experiment_dir = base / OUT_DIR / TASK
+    base_experiment_dir = OUT_DIR / TASK
     latest_checkpoint = None
     latest_run_dir = None
     
@@ -546,7 +546,7 @@ def main():
         print(f"Resuming training from this checkpoint...")
     else:
         run_ts = datetime.utcnow().strftime("%Y-%m-%dT%H-%M-%SZ")
-        run_dir = base / OUT_DIR / TASK / run_ts
+        run_dir = OUT_DIR / TASK / run_ts
         run_dir.mkdir(parents=True, exist_ok=True)
         print(f"\n🆕 No existing checkpoint found. Starting new training run...")
     
@@ -557,7 +557,10 @@ def main():
     print(f"{'='*60}\n")
     print(f"Loading data from: {DATA_FILE}")
     
-    df = pd.read_csv(base / DATA_FILE)
+    if not DATA_FILE.exists():
+        raise FileNotFoundError(f"Dataset not found at {DATA_FILE}")
+
+    df = pd.read_csv(DATA_FILE)
     print(f"Initial rows: {len(df):,}")
     
     df["text"] = df["text"].astype(str)
@@ -567,7 +570,7 @@ def main():
     df = df[df["label"] != -1].copy()
     print(f"\nAfter filtering: {len(df):,} valid samples")
     
-    df["variant"] = np.where(df["language"].eq("msa"), "msa", "dialect")
+    df["variant"] = np.where(df["language"] == "da", "dialect", "msa")
     msa_df = df[df["variant"] == "msa"].copy()
     dial_df = df[df["variant"] == "dialect"].copy()
     
@@ -676,7 +679,7 @@ def main():
         "run_timestamp": run_ts,
         "model_name": MODEL_NAME,
         "task": TASK,
-        "data_file": DATA_FILE,
+        "data_file": str(DATA_FILE),
         "data_subset_ratio": DATA_SUBSET_RATIO,
         "epochs": EPOCHS,
         "learning_rate": LR,

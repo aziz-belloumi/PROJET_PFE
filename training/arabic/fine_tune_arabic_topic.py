@@ -54,7 +54,7 @@ SEED = 42
 DATA_SUBSET_RATIO = 1.0
 RESUME_CHECKPOINT = None
 
-VALID_LANG = {"ar", "msa", "egy", "lev", "glf", "mgr"}
+VALID_LANG = {"ar", "da"}
 
 CATEGORY_DISPLAY = {
     0: {"ar": "السياسة", "en": "Politics"},
@@ -553,7 +553,7 @@ def main():
     df["label"] = df["topic"].apply(parse_topic).astype(int)
     df = df[df["label"] != -1].copy()
 
-    df["variant"] = np.where(df["language"].isin(["msa", "ar"]), "msa", "dialect")
+    df["variant"] = np.where(df["language"] == "da", "dialect", "msa")
     msa_df = df[df["variant"] == "msa"].copy()
     dial_df = df[df["variant"] == "dialect"].copy()
 

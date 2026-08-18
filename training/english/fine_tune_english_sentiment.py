@@ -58,10 +58,8 @@ torch.set_float32_matmul_precision("high")
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"Using device: {device}")
 
-# ============================================================
-# ENHANCED PATHS AND HYPERPARAMETERS
-# ============================================================
-DATA_FILE = "fine_tune_data/global_data_merged.csv"
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+DATA_FILE = PROJECT_ROOT / "data" / "global_data_libelised.csv"
 WORKING_DIR = Path("./sentiment_experiments")
 EXPERIMENTS_BASE = WORKING_DIR / "english_sentiment_enhanced"
 EXPERIMENTS_BASE.mkdir(parents=True, exist_ok=True)
