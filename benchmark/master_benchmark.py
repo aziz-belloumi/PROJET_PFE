@@ -83,7 +83,12 @@ def benchmark_item(task_name: str, model_name: str, lang: str, device_type: str,
     monitor = ResourceMonitor()
     device_idx = 0 if device_type == "GPU" and torch.cuda.is_available() else -1
 
-    indices = df.index[df['langue'] == lang].tolist() if lang != 'multi' else df.index.tolist()
+    if lang == 'ar':
+        indices = df.index[df['langue'].isin(['ar', 'da'])].tolist()
+    elif lang != 'multi':
+        indices = df.index[df['langue'] == lang].tolist()
+    else:
+        indices = df.index.tolist()
     if not indices:
         return None
 

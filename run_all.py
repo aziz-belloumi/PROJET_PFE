@@ -23,7 +23,7 @@ from models.transformers.evaluation import (
     generate_full_report,
     check_missing_values,
 )
-FORCE_RERUN = True
+FORCE_RERUN = False
 
 
 def build_expected_columns() -> list[tuple[str, str, str]]:

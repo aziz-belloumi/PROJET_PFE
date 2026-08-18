@@ -96,8 +96,8 @@ NER_MODELS: dict[str, list[str]] = {
         'Babelscape/wikineural-multilingual-ner'
     ]
 }
-FORCE_RERUN_SENTIMENT = True
-FORCE_RERUN_NER = True
+FORCE_RERUN_SENTIMENT = False
+FORCE_RERUN_NER = False
 
 
 def run_bert_models(
@@ -152,7 +152,9 @@ def run_bert_models(
                     is_missing = get_missing_mask(df, col_name)
 
                 target_indices = df.index[is_missing].tolist()
-                if lang != 'multi':
+                if lang == 'ar':
+                    target_indices = [i for i in target_indices if df.loc[i, 'langue'] in ('ar', 'da')]
+                elif lang != 'multi':
                     target_indices = [i for i in target_indices if df.loc[i, 'langue'] == lang]
 
                 if not target_indices:

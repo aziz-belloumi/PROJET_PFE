@@ -424,6 +424,7 @@ class GLiNERNER:
 
     LANGUAGE_THRESHOLDS = {
         "ar": 0.6,
+        "da": 0.6,
         "en": 0.6,
         "fr": 0.6,
     }

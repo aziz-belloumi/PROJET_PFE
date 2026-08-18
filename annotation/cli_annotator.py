@@ -28,7 +28,7 @@ except ImportError:
 
 def format_text_for_terminal(text, lang):
     text = str(text)
-    if lang == 'ar' and BIDI_AVAILABLE:
+    if lang in ('ar', 'da') and BIDI_AVAILABLE:
         reshaped = arabic_reshaper.reshape(text)
         return get_display(reshaped)
     return text
@@ -39,7 +39,7 @@ def display_themes(lang):
     print("      AVAILABLE THEMES")
     print("="*30)
     for idx, translations in CATEGORY_DISPLAY.items():
-        theme_name = translations.get(lang, translations["en"])
+        theme_name = translations.get(lang, translations.get("ar" if lang == "da" else "en"))
         display_name = format_text_for_terminal(theme_name, lang)
         print(f"[{idx:2d}] {display_name}")
     print("="*30 + "\n")
@@ -75,7 +75,7 @@ def main():
 
         if not theme_attendu or not sentiment_attendu or not correct_theme or not correct_sent:
             lang = str(row['langue']).lower()
-            if lang not in ['ar', 'en', 'fr']:
+            if lang not in ['ar', 'da', 'en', 'fr']:
                 lang = 'en'
 
             print("\n" + "#"*80)

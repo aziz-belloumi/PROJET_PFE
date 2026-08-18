@@ -62,7 +62,7 @@ TOPIC_MODELS: dict[str, list[str]] = {
     ]
 }
 
-FORCE_RERUN_TOPIC = True
+FORCE_RERUN_TOPIC = False
 
 
 def run_nli_models(
@@ -106,7 +106,9 @@ def run_nli_models(
                 is_missing = get_missing_mask(df, col_name)
 
             target_indices = df.index[is_missing].tolist()
-            if lang != 'multi':
+            if lang == 'ar':
+                target_indices = [i for i in target_indices if df.loc[i, 'langue'] in ('ar', 'da')]
+            elif lang != 'multi':
                 target_indices = [i for i in target_indices if df.loc[i, 'langue'] == lang]
 
             if not target_indices:

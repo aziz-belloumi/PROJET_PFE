@@ -1,195 +1,109 @@
 """
 sample_extraction.py
 --------------------
-Extracts a stratified sample of annotated articles from the production database
-and writes them to data/manual_eval_global.csv for manual evaluation.
+Extracts a stratified sample of annotated articles from the Data_Exploring project
+(data_libelisation/global_data_libelised.csv) and prepares data/manual_eval_global.csv
+for manual evaluation and benchmark evaluation.
 
-NOTE: This script requires the main application project's database environment
-      (src.db_config, src.preprocessing) to be available in PYTHONPATH.
-      It is kept here for reference and is NOT run as part of the benchmark pipeline.
+Traceability & Language Partition:
+  - 'ar' : Modern Standard Arabic (MSA)
+  - 'da' : Dialectal Arabic (DA)
+  - 'en' : English
+  - 'fr' : French
 
 Usage:
-    python annotation/sample_extraction.py --n_ar 150 --n_en 150 --n_fr 10
+    python annotation/sample_extraction.py --n_ar 150 --n_da 150 --n_en 150 --n_fr 150
 """
 from __future__ import annotations
 
 import sys
 import csv
+import logging
 from pathlib import Path
-from typing import List, Optional
+from typing import Optional
 
 import pandas as pd
-from sqlalchemy import text, bindparam
 
-# Ensure the main application project root is importable
+# Resolve project root
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(PROJECT_ROOT))
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
-# These imports require the external application environment
-from src.db_config import DatabaseConnection  # noqa: E402
-from src.preprocessing import PreprocessRouter
-import logging
-
-MODEL_VERSIONS = [0]
+DEFAULT_SOURCE_CSV = PROJECT_ROOT.parent / "Data_Exploring" / "data_libelisation" / "global_data_libelised.csv"
+DEFAULT_OUTPUT_CSV = PROJECT_ROOT / "data" / "manual_eval_global.csv"
 
 
-def _make_expanding_in_clause(base_sql: str, param_name: str = "ids"):
-    return text(base_sql).bindparams(bindparam(param_name, expanding=True))
-
-
-def _pick_language_per_article(sent_long: pd.DataFrame) -> pd.DataFrame:
+def extract_samples(
+    source_csv: Path = DEFAULT_SOURCE_CSV,
+    out_csv: Path = DEFAULT_OUTPUT_CSV,
+    n_ar: int = 150,
+    n_da: int = 150,
+    n_en: int = 150,
+    n_fr: int = 150,
+    random_seed: int = 42,
+) -> Path:
     """
-    Articles are in long format. Language should be same per article,
-    but we pick the first non-null value.
+    Extracts stratified samples from global_data_libelised.csv and saves to manual_eval_global.csv.
     """
-    if sent_long.empty or "language" not in sent_long.columns:
-        return pd.DataFrame(columns=["article_id", "language"])
-
-    tmp = sent_long.dropna(subset=["language"]).copy()
-    tmp["language"] = tmp["language"].astype(str).str.lower().str.strip()
-    tmp = tmp[tmp["language"] != ""]
-    if tmp.empty:
-        return pd.DataFrame(columns=["article_id", "language"])
-
-    return (
-        tmp.sort_values("article_id")
-           .groupby("article_id", as_index=False)
-           .first()[["article_id", "language"]]
-    )
-
-
-def main(n_ar: int = 150, n_en: int = 150, n_fr: int = 10, raw_table: str = "article") -> Path | list[Path]:
-    out_dir = PROJECT_ROOT / "data"
-    out_dir.mkdir(parents=True, exist_ok=True)
-
     logging.basicConfig(level=logging.INFO)
     logger = logging.getLogger(__name__)
 
-    db = DatabaseConnection()
-    engine = db.get_engine()
-
-    # -------------------------------------------------------------------------
-    # 1) Sample article IDs (must have topic + sentiment + at least 1 entity)
-    # -------------------------------------------------------------------------
-    sample_sql = f"""
-        (
-            SELECT a.id AS article_id
-            FROM {raw_table} a
-            JOIN articles_enriched ae ON ae.article_id = a.id
-              AND ae.language = 'ar'
-              AND EXISTS (SELECT 1 FROM article_topics t WHERE t.article_id = a.id)
-              AND EXISTS (SELECT 1 FROM article_entities ane WHERE ane.article_id = a.id)
-            GROUP BY a.id
-            ORDER BY RAND()
-            LIMIT :n_ar
+    if not source_csv.exists():
+        raise FileNotFoundError(
+            f"Source dataset not found at '{source_csv}'. "
+            f"Please ensure Data_Exploring project has generated 'global_data_libelised.csv'."
         )
-        UNION ALL
-        (
-            SELECT a.id AS article_id
-            FROM {raw_table} a
-            JOIN articles_enriched ae ON ae.article_id = a.id
-            WHERE a.body IS NOT NULL
-              AND ae.language = 'en'
-              AND EXISTS (SELECT 1 FROM article_topics t WHERE t.article_id = a.id)
-              AND EXISTS (SELECT 1 FROM article_entities ane WHERE ane.article_id = a.id)
-            GROUP BY a.id
-            ORDER BY RAND()
-            LIMIT :n_en
-        )
-        UNION ALL
-        (
-            SELECT a.id AS article_id
-            FROM {raw_table} a
-            JOIN articles_enriched ae ON ae.article_id = a.id
-            WHERE a.body IS NOT NULL
-              AND ae.language = 'fr'
-              AND EXISTS (SELECT 1 FROM article_topics t WHERE t.article_id = a.id)
-              AND EXISTS (SELECT 1 FROM article_entities ane WHERE ane.article_id = a.id)
-            GROUP BY a.id
-            ORDER BY RAND()
-            LIMIT :n_fr
-        )
-    """
-    sample_ids = pd.read_sql(text(sample_sql), engine, params={"n_ar": int(n_ar), "n_en": int(n_en), "n_fr": int(n_fr)})
-    if sample_ids.empty:
-        raise RuntimeError("No eligible articles found (need topic + entities).")
 
-    ids = [int(x) for x in sample_ids["article_id"].tolist()]
+    logger.info(f"Loading source dataset from: {source_csv}")
+    df_raw = pd.read_csv(source_csv, low_memory=False)
 
-    # -------------------------------------------------------------------------
-    # 2) Load raw article fields
-    # -------------------------------------------------------------------------
-    articles_sql = _make_expanding_in_clause(f"""
-        SELECT
-            a.id AS article_id,
-            a.body
-        FROM {raw_table} a
-        WHERE a.id IN :ids
-    """)
-    articles = pd.read_sql(articles_sql, engine, params={"ids": ids})
-    articles["body"] = articles["body"].fillna("")
+    # Standardize column names
+    col_map = {c.lower().strip(): c for c in df_raw.columns}
+    text_col = col_map.get("text", col_map.get("texte", "text"))
+    lang_col = col_map.get("language", col_map.get("langue", "language"))
+    sent_col = col_map.get("sentiment", "sentiment")
+    topic_col = col_map.get("topic", col_map.get("thème", "topic"))
 
-    # -------------------------------------------------------------------------
-    # 3) Load topic predictions
-    # -------------------------------------------------------------------------
-    topics_sql = _make_expanding_in_clause("""
-        SELECT
-            article_id,
-            topic_label
-        FROM article_topics
-        WHERE article_id IN :ids
-    """)
-    topics_long = pd.read_sql(topics_sql, engine, params={"ids": ids})
+    df_raw["clean_lang"] = df_raw[lang_col].astype(str).str.lower().str.strip()
 
-    if not topics_long.empty:
-        topics_long["topic_label"] = topics_long["topic_label"].astype(str).str.strip()
-        topic_label_first = topics_long.groupby("article_id")["topic_label"].first()
-        topics_wide = pd.DataFrame({"thème prédit": topic_label_first}).reset_index()
-    else:
-        topics_wide = pd.DataFrame({"article_id": ids, "thème prédit": ""})
+    samples = []
+    sampling_plan = [
+        ("ar", n_ar, "Modern Standard Arabic (MSA)"),
+        ("da", n_da, "Dialectal Arabic (DA)"),
+        ("en", n_en, "English"),
+        ("fr", n_fr, "French"),
+    ]
 
-    # -------------------------------------------------------------------------
-    # 4) Load sentiment (long format), then pivot wide
-    # -------------------------------------------------------------------------
-    sent_sql = _make_expanding_in_clause("""
-        SELECT
-            article_id,
-            language,
-            sentiment_label
-        FROM articles_enriched
-        WHERE article_id IN :ids
-    """)
-    sent_long = pd.read_sql(sent_sql, engine, params={"ids": ids})
+    for lang_code, n_target, lang_label in sampling_plan:
+        if n_target <= 0:
+            continue
+        sub = df_raw[df_raw["clean_lang"] == lang_code]
+        avail = len(sub)
+        logger.info(f"Language '{lang_code}' ({lang_label}): {avail} available articles in source.")
 
-    lang_per_article = _pick_language_per_article(sent_long)
+        if avail == 0:
+            logger.warning(f"No articles found for language '{lang_code}' in source dataset.")
+            continue
 
-    if not sent_long.empty:
-        sent_long["sentiment_label"] = sent_long["sentiment_label"].astype(str).str.upper().str.strip()
-        sent_label_first = sent_long.groupby("article_id")["sentiment_label"].first()
-        sent_wide = pd.DataFrame({"sentiment prédit": sent_label_first}).reset_index()
-    else:
-        sent_wide = pd.DataFrame({"article_id": ids, "sentiment prédit": ""})
+        n_sample = min(n_target, avail)
+        sampled_sub = sub.sample(n=n_sample, random_state=random_seed)
+        samples.append(sampled_sub)
+        logger.info(f"Sampled {n_sample}/{n_target} articles for '{lang_code}'.")
 
-    # -------------------------------------------------------------------------
-    # 5) Merge everything into one article-level dataset
-    # -------------------------------------------------------------------------
-    out = articles.merge(topics_wide, on="article_id", how="left")
-    out = out.merge(lang_per_article, on="article_id", how="left")
-    out = out.merge(sent_wide, on="article_id", how="left")
+    if not samples:
+        raise RuntimeError("No samples could be extracted from the source dataset.")
 
-    out["language"]         = out["language"].fillna("")
-    out["body"]             = out["body"].fillna("")
-    out["thème prédit"]     = out["thème prédit"].fillna("")
-    out["sentiment prédit"] = out["sentiment prédit"].fillna("")
+    df_sample = pd.concat(samples, ignore_index=True)
 
-    print("Preprocessing text for sentiment...")
-    preproc = PreprocessRouter(logger=logger)
-    out["texte"] = out.apply(lambda r: preproc.preprocess(r["body"], str(r["language"]), "sentiment"), axis=1)
-
-    out["langue"]                    = out["language"]
-    out["thème attendu"]             = ""
-    out["sentiment attendu"]         = ""
-    out["correct/incorrect theme"]   = ""
+    # Build standard manual evaluation columns
+    out = pd.DataFrame()
+    out["texte"] = df_sample[text_col].fillna("").astype(str).str.strip()
+    out["langue"] = df_sample["clean_lang"]
+    out["thème attendu"] = df_sample[topic_col].fillna("").astype(str).str.strip() if topic_col in df_sample.columns else ""
+    out["thème prédit"] = ""
+    out["correct/incorrect theme"] = ""
+    out["sentiment attendu"] = df_sample[sent_col].fillna("").astype(str).str.strip().str.upper() if sent_col in df_sample.columns else ""
+    out["sentiment prédit"] = ""
     out["correct/incorrect sentiment"] = ""
 
     final_cols = [
@@ -200,27 +114,36 @@ def main(n_ar: int = 150, n_en: int = 150, n_fr: int = 10, raw_table: str = "art
         "correct/incorrect theme",
         "sentiment attendu",
         "sentiment prédit",
-        "correct/incorrect sentiment"
+        "correct/incorrect sentiment",
     ]
+    out = out[final_cols]
 
-    out = out[final_cols].sort_values(by="langue", ascending=True)
-
-    out_path = out_dir / "manual_eval_global.csv"
-    out.to_csv(out_path, index=False, encoding="utf-8-sig", quoting=csv.QUOTE_MINIMAL)
-
-    db.close()
-    print(f"Saved: {out_path}")
-    return out_path
+    out_csv.parent.mkdir(parents=True, exist_ok=True)
+    out.to_csv(out_csv, index=False, encoding="utf-8-sig", quoting=csv.QUOTE_MINIMAL)
+    logger.info(f"Successfully exported {len(out)} sample articles to: {out_csv}")
+    print(f"Extraction complete! Saved: {out_csv} ({len(out)} articles total)")
+    return out_csv
 
 
 if __name__ == "__main__":
     import argparse
 
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--n_ar",       type=int, default=150, help="Number of Arabic articles to export")
-    ap.add_argument("--n_en",       type=int, default=150, help="Number of English articles to export")
-    ap.add_argument("--n_fr",       type=int, default=10,  help="Number of French articles to export")
-    ap.add_argument("--raw_table",  type=str, default="article", help="Raw article table name")
+    ap = argparse.ArgumentParser(description="Extract stratified samples from Data_Exploring dataset.")
+    ap.add_argument("--source-csv", type=Path, default=DEFAULT_SOURCE_CSV, help="Path to global_data_libelised.csv")
+    ap.add_argument("--out-csv", type=Path, default=DEFAULT_OUTPUT_CSV, help="Path to output manual_eval_global.csv")
+    ap.add_argument("--n_ar", type=int, default=150, help="Number of MSA Arabic articles (langue='ar')")
+    ap.add_argument("--n_da", type=int, default=150, help="Number of Dialectal Arabic articles (langue='da')")
+    ap.add_argument("--n_en", type=int, default=150, help="Number of English articles (langue='en')")
+    ap.add_argument("--n_fr", type=int, default=150, help="Number of French articles (langue='fr')")
+    ap.add_argument("--seed", type=int, default=42, help="Random seed for reproducible sampling")
     args = ap.parse_args()
 
-    main(n_ar=args.n_ar, n_en=args.n_en, n_fr=args.n_fr, raw_table=args.raw_table)
+    extract_samples(
+        source_csv=args.source_csv,
+        out_csv=args.out_csv,
+        n_ar=args.n_ar,
+        n_da=args.n_da,
+        n_en=args.n_en,
+        n_fr=args.n_fr,
+        random_seed=args.seed,
+    )

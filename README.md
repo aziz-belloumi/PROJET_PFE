@@ -7,14 +7,14 @@
 
 A production-grade multilingual benchmark and evaluation suite for **Sentiment Analysis**, **Named Entity Recognition (NER)**, and **Zero-Shot Topic Classification**. 
 
-The suite systematically evaluates **31 transformer models** and **Qwen2.5:7b (Ollama)** on a curated, manually verified dataset of **600 news articles** spanning **Modern Standard Arabic (MSA)**, **Dialectal Arabic**, **English**, and **French**.
+The suite systematically evaluates **31 transformer models** and **Qwen2.5:7b (Ollama)** on a curated, manually verified dataset of **600 news articles** spanning **Modern Standard Arabic (MSA)** (`ar`), **Dialectal Arabic** (`da`), **English** (`en`), and **French** (`fr`).
 
 ---
 
 ## Table of Contents
 
 - [Project Architecture](#project-architecture)
-- [Dataset Composition](#dataset-composition)
+- [Dataset Composition & Lineage](#dataset-composition--lineage)
 - [Model Catalog (31 Benchmarked Models)](#model-catalog-31-benchmarked-models)
 - [Quickstart & Execution Guide](#quickstart--execution-guide)
   - [1. Master Benchmark Runner (`run_all.py`)](#1-master-benchmark-runner-run_allpy)
@@ -52,7 +52,7 @@ Testing_Models/
 │       ├── sentiment_analysis.py       # LLMSentiment extraction class
 │       ├── topic_generation.py         # LLMTopic classification class
 │       ├── run_qwen.py                 # Offline batch annotator for Qwen2.5:7b
-│       └── run_qwen_pass.py            # Database pass updater (requires external DB)
+│       └── run_qwen_pass.py            # Database pass updater
 │
 ├── benchmark/
 │   ├── master_benchmark.py             # Standalone CPU/GPU resource benchmark runner
@@ -62,7 +62,7 @@ Testing_Models/
 ├── annotation/
 │   ├── cli_annotator.py                # Interactive terminal manual annotator with RTL Arabic support
 │   ├── check_inconsistencies.py        # Consistency validator for annotations and ground-truth
-│   └── sample_extraction.py            # Stratified sampler from production SQL database (*)
+│   └── sample_extraction.py            # Stratified sampler from Data_Exploring (global_data_libelised.csv)
 │
 ├── translation/
 │   ├── translation.py                  # MarianMT (Helsinki-NLP/opus-mt-en-fr) translation engine
@@ -75,21 +75,27 @@ Testing_Models/
     └── report.txt                      # Comprehensive generated evaluation report
 ```
 
-> `(*)` Requires external database environment credentials (`src.db_config`).
-
 ---
 
-## Dataset Composition
+## Dataset Composition & Lineage
 
-The ground-truth dataset ([data/manual_eval_global.csv](data/manual_eval_global.csv)) contains **600 balanced news articles**:
+### Data Lineage
+The evaluation dataset is sourced from the upstream **`Data_Exploring`** project (`data_libelisation/global_data_libelised.csv`), where articles were annotated and partitioned by dialect variety using the interactive CLI tool:
+- **`ar`**: Modern Standard Arabic (MSA)
+- **`da`**: Dialectal Arabic (DA)
+- **`en`**: English
+- **`fr`**: French
 
-| Language Variant | Rows | Percentage | Description |
-| :--- | :---: | :---: | :--- |
-| **Arabic (MSA)** | 150 | 25.0% | Modern Standard Arabic news articles (indices 0–149) |
-| **Arabic (Dialectal)** | 150 | 25.0% | Dialectal Arabic news articles (indices 150–299) |
-| **English** | 150 | 25.0% | English news articles (indices 300–449) |
-| **French** | 150 | 25.0% | French news articles (indices 450–599) |
-| **Total** | **600** | **100.0%** | Ground-truth annotated across 18 topics & 3 sentiment classes |
+### Dataset Partition ([data/manual_eval_global.csv](data/manual_eval_global.csv))
+The ground-truth dataset contains **600 balanced news articles**:
+
+| Language Code | Language Variant | Rows | Percentage | Index Range | Description |
+| :---: | :--- | :---: | :---: | :---: | :--- |
+| `ar` | **Arabic (MSA)** | 150 | 25.0% | 0–149 | Modern Standard Arabic news articles |
+| `en` | **English** | 150 | 25.0% | 150–299 | English news articles |
+| `fr` | **French** | 150 | 25.0% | 300–449 | French news articles (MarianMT translated) |
+| `da` | **Arabic (Dialectal)** | 150 | 25.0% | 450–599 | Dialectal Arabic news articles |
+| **Total** | | **600** | **100.0%** | **0–599** | Annotated across 18 topics & 3 sentiment classes |
 
 ### Topic Classes (18 Categories)
 `Politics`, `Economy`, `Security`, `Energy`, `Conflict`, `Elections`, `Justice`, `Health`, `Weather`, `Sports`, `Culture`, `Education`, `Technology`, `Environment`, `Diplomacy`, `Religion`, `Migration`, `General`.
@@ -196,7 +202,7 @@ The benchmark reports comprehensive multi-class metrics:
 2. **F1 Macro**: Unweighted mean of F1 scores across all classes. Crucial for handling class imbalance (e.g. rare topics or skewed sentiment classes).
 3. **Precision (Macro)**: Measures false alarm rates per class.
 4. **Recall (Macro)**: Measures model coverage of true positive instances per class.
-5. **MSA vs. Dialectal Breakdown**: All Arabic models are evaluated independently on the MSA subset (150 rows) and Dialectal subset (150 rows) to expose dialect generalization gaps.
+5. **MSA vs. Dialectal Breakdown**: All Arabic models are evaluated independently on the MSA subset (`ar`: 150 rows) and Dialectal subset (`da`: 150 rows) to expose dialect generalization gaps.
 6. **NER Metrics**: Percentage of documents with identified entities, average entities extracted per document, and empty prediction rates.
 
 ---
@@ -215,6 +221,12 @@ All benchmark results are automatically saved to [benchmark/resource_usage_repor
 ---
 
 ## Annotation & Quality Assurance Tools
+
+### Sample Extraction
+Extracts a stratified sample of articles from `Data_Exploring`:
+```bash
+python annotation/sample_extraction.py --n_ar 150 --n_da 150 --n_en 150 --n_fr 150
+```
 
 ### Validate Dataset Consistency
 Checks that predicted flags, expected themes, and sentiment labels in the CSV are logically aligned:

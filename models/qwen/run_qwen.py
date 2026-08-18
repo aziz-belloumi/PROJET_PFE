@@ -55,8 +55,12 @@ def main():
         for i, idx in enumerate(target_indices):
             text = str(df.loc[idx, 'texte'])
             row_lang = str(df.loc[idx, 'langue']).lower().strip()
-            if row_lang not in ['ar', 'en', 'fr']:
-                row_lang = 'en'
+            if row_lang in ['ar', 'da']:
+                model_lang = 'ar'
+            elif row_lang in ['en', 'fr']:
+                model_lang = row_lang
+            else:
+                model_lang = 'en'
 
             t_pred = str(df.loc[idx, 'thème prédit']).strip()
             s_pred = str(df.loc[idx, 'sentiment prédit']).strip()
@@ -67,11 +71,11 @@ def main():
             print(f"\n[{i+1}/{len(target_indices)}] Processing article at index {idx} (LANG: {row_lang.upper()})...")
 
             try:
-                topic_res = topic_model.predict(text, lang=row_lang)
+                topic_res = topic_model.predict(text, lang=model_lang)
                 df.loc[idx, 'thème prédit'] = topic_res.label
                 print(f"  -> Predicted Theme    : {topic_res.label}")
 
-                sentiment_res = sentiment_model.predict(text, lang=row_lang)
+                sentiment_res = sentiment_model.predict(text, lang=model_lang)
                 df.loc[idx, 'sentiment prédit'] = sentiment_res.label
                 print(f"  -> Predicted Sentiment: {sentiment_res.label}")
 

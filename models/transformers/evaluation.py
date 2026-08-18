@@ -319,17 +319,16 @@ def generate_full_report(
 
     sent_true_col = find_column(df, ['sentiment attendu', 'sentiment'])
     if sent_true_col and sent_true_col in df.columns:
-        ar_df  = df[df['langue'] == 'ar'].reset_index(drop=True)
-        msa_df = ar_df.iloc[:MSA_COUNT]
-        dia_df = ar_df.iloc[MSA_COUNT:]
+        msa_df = df[df['langue'] == 'ar']
+        dia_df = df[df['langue'] == 'da']
         en_df  = df[df['langue'] == 'en']
         fr_df  = df[df['langue'] == 'fr']
 
         variant_label_map = [
-            ("MSA Arabic (first 150 AR rows)",      msa_df),
-            ("Dialectal Arabic (remaining AR rows)", dia_df),
-            ("English",                              en_df),
-            ("French",                               fr_df),
+            ("MSA Arabic (ar)",      msa_df),
+            ("Dialectal Arabic (da)", dia_df),
+            ("English (en)",          en_df),
+            ("French (fr)",           fr_df),
         ]
 
         for variant_name, sub_df in variant_label_map:
@@ -371,7 +370,7 @@ def generate_full_report(
             report_lines.append("    (no ground-truth topic labels found)")
         report_lines.append("")
 
-        for lang_code, lang_label in [('ar', 'Arabic'), ('en', 'English'), ('fr', 'French')]:
+        for lang_code, lang_label in [('ar', 'Arabic MSA (ar)'), ('da', 'Dialectal Arabic (da)'), ('en', 'English (en)'), ('fr', 'French (fr)')]:
             lang_sub = df[df['langue'] == lang_code]
             topic_valid_lang = lang_sub[topic_true_col].astype(str).str.strip()
             topic_valid_lang = topic_valid_lang[(topic_valid_lang != '') & (topic_valid_lang.str.lower() != 'nan')]
@@ -402,7 +401,12 @@ def generate_full_report(
         if task_name != 'sentiment' or col_name not in df.columns:
             continue
 
-        lang_rows = df if lang == 'multi' else df[df['langue'] == lang]
+        if lang == 'ar':
+            lang_rows = df[df['langue'].isin(['ar', 'da'])]
+        elif lang == 'multi':
+            lang_rows = df
+        else:
+            lang_rows = df[df['langue'] == lang]
         total_r = len(lang_rows)
 
         acc, f1, prec, rec, valid_count = calculate_sentiment_metrics(lang_rows, col_name)
@@ -425,9 +429,8 @@ def generate_full_report(
             report_lines.append(f"    {sent}: {count} ({count / valid_pred_total * 100:.1f}%)")
 
         if lang == 'ar':
-            ar_df  = lang_rows[lang_rows['langue'] == 'ar'].reset_index(drop=True)
-            msa_df = ar_df.iloc[:MSA_COUNT]
-            dia_df = ar_df.iloc[MSA_COUNT:]
+            msa_df = lang_rows[lang_rows['langue'] == 'ar']
+            dia_df = lang_rows[lang_rows['langue'] == 'da']
 
             report_lines.append("")
             report_lines.append("  --- MSA / Dialectal Breakdown ---")
@@ -474,7 +477,12 @@ def generate_full_report(
         if task_name != 'ner' or col_name not in df.columns:
             continue
 
-        lang_rows = df if lang == 'multi' else df[df['langue'] == lang]
+        if lang == 'ar':
+            lang_rows = df[df['langue'].isin(['ar', 'da'])]
+        elif lang == 'multi':
+            lang_rows = df
+        else:
+            lang_rows = df[df['langue'] == lang]
         total_r = len(lang_rows)
 
         # Processed = non-NaN rows (NaN = not yet run)
@@ -503,9 +511,8 @@ def generate_full_report(
             report_lines.append(f"  Errors        : {error_ner} ({error_ner / total_r * 100:.1f}%)")
 
         if lang == 'ar':
-            ar_df  = lang_rows[lang_rows['langue'] == 'ar'].reset_index(drop=True)
-            msa_df = ar_df.iloc[:MSA_COUNT]
-            dia_df = ar_df.iloc[MSA_COUNT:]
+            msa_df = lang_rows[lang_rows['langue'] == 'ar']
+            dia_df = lang_rows[lang_rows['langue'] == 'da']
 
             report_lines.append("")
             report_lines.append("  --- MSA / Dialectal Breakdown ---")
@@ -549,7 +556,12 @@ def generate_full_report(
         if task_name != 'topic' or col_name not in df.columns:
             continue
 
-        lang_rows = df if lang == 'multi' else df[df['langue'] == lang]
+        if lang == 'ar':
+            lang_rows = df[df['langue'].isin(['ar', 'da'])]
+        elif lang == 'multi':
+            lang_rows = df
+        else:
+            lang_rows = df[df['langue'] == lang]
         total_r = len(lang_rows)
 
         acc, f1, prec, rec, valid_count = calculate_topic_metrics(lang_rows, col_name)
@@ -584,7 +596,12 @@ def generate_full_report(
     total_missing_all = 0
     for col_name, lang, task_name in expected_model_columns:
         if col_name in df.columns:
-            lang_rows = df if lang == 'multi' else df[df['langue'] == lang]
+            if lang == 'ar':
+                lang_rows = df[df['langue'].isin(['ar', 'da'])]
+            elif lang == 'multi':
+                lang_rows = df
+            else:
+                lang_rows = df[df['langue'] == lang]
             missing    = lang_rows[col_name].isna().sum()
             empty      = (lang_rows[col_name].astype(str).str.strip() == "").sum()
             nan_str    = (lang_rows[col_name].astype(str).str.strip().str.lower() == "nan").sum()
@@ -618,7 +635,12 @@ def check_missing_values(df: pd.DataFrame, expected_model_columns: list[tuple[st
     total_missing_all = 0
     for col_name, lang, task_name in expected_model_columns:
         if col_name in df.columns:
-            lang_rows = df if lang == 'multi' else df[df['langue'] == lang]
+            if lang == 'ar':
+                lang_rows = df[df['langue'].isin(['ar', 'da'])]
+            elif lang == 'multi':
+                lang_rows = df
+            else:
+                lang_rows = df[df['langue'] == lang]
 
             missing    = lang_rows[col_name].isna().sum()
             empty      = (lang_rows[col_name].astype(str).str.strip() == "").sum()

@@ -3,31 +3,32 @@
 ======================================================================
 
 LANGUAGE DISTRIBUTION:
-  AR: 300 rows (50.0%)
+  AR: 150 rows (25.0%)
   EN: 150 rows (25.0%)
   FR: 150 rows (25.0%)
+  DA: 150 rows (25.0%)
   TOTAL: 600 rows
 
 ======================================================================
     GROUND-TRUTH SENTIMENT DISTRIBUTION (by language variant)
 ======================================================================
 
-  [MSA Arabic (first 150 AR rows)] — 150 labelled rows
+  [MSA Arabic (ar)] — 150 labelled rows
     POSITIVE: 19 (12.7%)
     NEGATIVE: 62 (41.3%)
     NEUTRAL: 69 (46.0%)
 
-  [Dialectal Arabic (remaining AR rows)] — 150 labelled rows
+  [Dialectal Arabic (da)] — 150 labelled rows
     POSITIVE: 35 (23.3%)
     NEGATIVE: 45 (30.0%)
     NEUTRAL: 70 (46.7%)
 
-  [English] — 150 labelled rows
+  [English (en)] — 150 labelled rows
     POSITIVE: 22 (14.7%)
     NEGATIVE: 70 (46.7%)
     NEUTRAL: 58 (38.7%)
 
-  [French] — 150 labelled rows
+  [French (fr)] — 150 labelled rows
     POSITIVE: 11 (7.3%)
     NEGATIVE: 69 (46.0%)
     NEUTRAL: 70 (46.7%)
@@ -81,27 +82,40 @@ LANGUAGE DISTRIBUTION:
     البيئة: 1 (0.2%)
     العدل: 1 (0.2%)
 
-  [Arabic] — 300 labelled rows
-    السياسة: 65 (21.7%)
-    عام: 56 (18.7%)
-    الأمن: 49 (16.3%)
-    النزاع: 46 (15.3%)
-    الدبلوماسية: 24 (8.0%)
-    الدين: 16 (5.3%)
-    الرياضة: 8 (2.7%)
-    الانتخابات: 7 (2.3%)
-    الصحة: 6 (2.0%)
-    العدالة: 4 (1.3%)
-    الاقتصاد: 4 (1.3%)
-    التعليم: 4 (1.3%)
-    الهجرة: 3 (1.0%)
-    الطاقة: 2 (0.7%)
-    الثقافة: 2 (0.7%)
-    الطقس: 2 (0.7%)
-    البيئة: 1 (0.3%)
-    العدل: 1 (0.3%)
+  [Arabic MSA (ar)] — 150 labelled rows
+    السياسة: 49 (32.7%)
+    النزاع: 32 (21.3%)
+    الأمن: 21 (14.0%)
+    الدبلوماسية: 20 (13.3%)
+    عام: 7 (4.7%)
+    الدين: 5 (3.3%)
+    الرياضة: 5 (3.3%)
+    الصحة: 3 (2.0%)
+    الهجرة: 3 (2.0%)
+    العدالة: 2 (1.3%)
+    الاقتصاد: 2 (1.3%)
+    الطاقة: 1 (0.7%)
 
-  [English] — 150 labelled rows
+  [Dialectal Arabic (da)] — 150 labelled rows
+    عام: 49 (32.7%)
+    الأمن: 28 (18.7%)
+    السياسة: 16 (10.7%)
+    النزاع: 14 (9.3%)
+    الدين: 11 (7.3%)
+    الانتخابات: 7 (4.7%)
+    التعليم: 4 (2.7%)
+    الدبلوماسية: 4 (2.7%)
+    الصحة: 3 (2.0%)
+    الرياضة: 3 (2.0%)
+    الثقافة: 2 (1.3%)
+    العدالة: 2 (1.3%)
+    الاقتصاد: 2 (1.3%)
+    الطقس: 2 (1.3%)
+    الطاقة: 1 (0.7%)
+    البيئة: 1 (0.7%)
+    العدل: 1 (0.7%)
+
+  [English (en)] — 150 labelled rows
     Conflict: 52 (34.7%)
     Politics: 39 (26.0%)
     Security: 20 (13.3%)
@@ -116,7 +130,7 @@ LANGUAGE DISTRIBUTION:
     Sports: 1 (0.7%)
     Justice: 1 (0.7%)
 
-  [French] — 150 labelled rows
+  [French (fr)] — 150 labelled rows
     Conflit: 52 (34.7%)
     Politique: 37 (24.7%)
     Sécurité: 19 (12.7%)
@@ -408,9 +422,9 @@ arabic-ner_ner_pred (AR):
   Total rows    : 300
   Benchmark & Resource Metrics:
     Device          : GPU (cuda:0)
-    Load Time       : 1.34s
-    Inference Time  : 3.06s (10.2 ms/doc | 98.1 docs/sec)
-    Peak Memory     : CPU +6.4 MB | GPU +421.4 MB
+    Load Time       : 3.56s
+    Inference Time  : 0.90s (14.8 ms/doc | 67.5 docs/sec)
+    Peak Memory     : CPU +295.8 MB | GPU +428.7 MB
   Processed     : 300 (100.0%)
   With entities : 239 (79.7% of processed)
   No entities   : 61 (20.3% of processed)
@@ -429,9 +443,9 @@ bert-base-arabic-camelbert-msa-ner_ner_pred (AR):
   Total rows    : 300
   Benchmark & Resource Metrics:
     Device          : GPU (cuda:0)
-    Load Time       : 1.44s
-    Inference Time  : 3.04s (10.1 ms/doc | 98.8 docs/sec)
-    Peak Memory     : CPU +424.7 MB | GPU +415.4 MB
+    Load Time       : 2.19s
+    Inference Time  : 0.48s (7.0 ms/doc | 143.0 docs/sec)
+    Peak Memory     : CPU +426.5 MB | GPU +414.0 MB
   Processed     : 300 (100.0%)
   With entities : 231 (77.0% of processed)
   No entities   : 69 (23.0% of processed)
@@ -450,9 +464,9 @@ bert-base-arabic-camelbert-mix-ner_ner_pred (AR):
   Total rows    : 300
   Benchmark & Resource Metrics:
     Device          : GPU (cuda:0)
-    Load Time       : 1.47s
-    Inference Time  : 3.07s (10.2 ms/doc | 97.7 docs/sec)
-    Peak Memory     : CPU +3.2 MB | GPU +415.4 MB
+    Load Time       : 2.46s
+    Inference Time  : 0.45s (6.6 ms/doc | 150.5 docs/sec)
+    Peak Memory     : CPU +4.8 MB | GPU +414.0 MB
   Processed     : 300 (100.0%)
   With entities : 233 (77.7% of processed)
   No entities   : 67 (22.3% of processed)
@@ -471,9 +485,9 @@ AraBert-Arabic-NER-CoNLLpp_ner_pred (AR):
   Total rows    : 300
   Benchmark & Resource Metrics:
     Device          : GPU (cuda:0)
-    Load Time       : 1.54s
-    Inference Time  : 2.92s (9.7 ms/doc | 102.8 docs/sec)
-    Peak Memory     : CPU +0.0 MB | GPU +515.4 MB
+    Load Time       : 2.02s
+    Inference Time  : 0.30s (7.2 ms/doc | 139.1 docs/sec)
+    Peak Memory     : CPU +0.0 MB | GPU +514.0 MB
   Processed     : 300 (100.0%)
   With entities : 258 (86.0% of processed)
   No entities   : 42 (14.0% of processed)
@@ -492,9 +506,9 @@ bert-base-NER_ner_pred (EN):
   Total rows    : 150
   Benchmark & Resource Metrics:
     Device          : GPU (cuda:0)
-    Load Time       : 1.32s
-    Inference Time  : 1.41s (9.4 ms/doc | 106.0 docs/sec)
-    Peak Memory     : CPU +4.1 MB | GPU +412.3 MB
+    Load Time       : 1.87s
+    Inference Time  : 0.11s (9.7 ms/doc | 102.7 docs/sec)
+    Peak Memory     : CPU +4.2 MB | GPU +411.0 MB
   Processed     : 150 (100.0%)
   With entities : 139 (92.7% of processed)
   No entities   : 11 (7.3% of processed)
@@ -503,9 +517,9 @@ bert-large-NER_ner_pred (EN):
   Total rows    : 150
   Benchmark & Resource Metrics:
     Device          : GPU (cuda:0)
-    Load Time       : 2.20s
-    Inference Time  : 3.36s (22.4 ms/doc | 44.6 docs/sec)
-    Peak Memory     : CPU +0.2 MB | GPU +1269.5 MB
+    Load Time       : 2.81s
+    Inference Time  : 0.48s (36.6 ms/doc | 27.3 docs/sec)
+    Peak Memory     : CPU +0.3 MB | GPU +1269.3 MB
   Processed     : 150 (100.0%)
   With entities : 137 (91.3% of processed)
   No entities   : 13 (8.7% of processed)
@@ -514,9 +528,9 @@ roberta-large-ner-english_ner_pred (EN):
   Total rows    : 150
   Benchmark & Resource Metrics:
     Device          : GPU (cuda:0)
-    Load Time       : 2.36s
-    Inference Time  : 3.22s (21.5 ms/doc | 46.5 docs/sec)
-    Peak Memory     : CPU +10.5 MB | GPU +1351.9 MB
+    Load Time       : 3.59s
+    Inference Time  : 0.49s (40.7 ms/doc | 24.6 docs/sec)
+    Peak Memory     : CPU +59.8 MB | GPU +1351.6 MB
   Processed     : 150 (100.0%)
   With entities : 138 (92.0% of processed)
   No entities   : 12 (8.0% of processed)
@@ -525,9 +539,9 @@ camembert-ner_ner_pred (FR):
   Total rows    : 150
   Benchmark & Resource Metrics:
     Device          : GPU (cuda:0)
-    Load Time       : 1.46s
-    Inference Time  : 1.38s (9.2 ms/doc | 108.6 docs/sec)
-    Peak Memory     : CPU +13.1 MB | GPU +421.4 MB
+    Load Time       : 2.00s
+    Inference Time  : 0.28s (9.8 ms/doc | 102.5 docs/sec)
+    Peak Memory     : CPU +28.6 MB | GPU +420.0 MB
   Processed     : 150 (100.0%)
   With entities : 121 (80.7% of processed)
   No entities   : 29 (19.3% of processed)
@@ -536,9 +550,9 @@ distilcamembert-base-ner_ner_pred (FR):
   Total rows    : 150
   Benchmark & Resource Metrics:
     Device          : GPU (cuda:0)
-    Load Time       : 1.16s
-    Inference Time  : 0.91s (6.1 ms/doc | 164.4 docs/sec)
-    Peak Memory     : CPU +3.1 MB | GPU +259.1 MB
+    Load Time       : 1.57s
+    Inference Time  : 0.15s (5.1 ms/doc | 196.3 docs/sec)
+    Peak Memory     : CPU +5.6 MB | GPU +257.8 MB
   Processed     : 150 (100.0%)
   With entities : 120 (80.0% of processed)
   No entities   : 30 (20.0% of processed)
@@ -547,9 +561,9 @@ gliner_multi-v2.1_ner_pred (MULTI):
   Total rows    : 600
   Benchmark & Resource Metrics:
     Device          : GPU (cuda:0)
-    Load Time       : 5.73s
-    Inference Time  : 17.78s (29.6 ms/doc | 33.7 docs/sec)
-    Peak Memory     : CPU +836.6 MB | GPU +1105.1 MB
+    Load Time       : 7.57s
+    Inference Time  : 4.31s (48.4 ms/doc | 20.7 docs/sec)
+    Peak Memory     : CPU +871.1 MB | GPU +1105.1 MB
   Processed     : 600 (100.0%)
   With entities : 511 (85.2% of processed)
   No entities   : 89 (14.8% of processed)
@@ -558,9 +572,9 @@ bert-base-multilingual-cased-ner-hrl_ner_pred (MULTI):
   Total rows    : 600
   Benchmark & Resource Metrics:
     Device          : GPU (cuda:0)
-    Load Time       : 1.85s
-    Inference Time  : 7.01s (11.7 ms/doc | 85.6 docs/sec)
-    Peak Memory     : CPU +18.7 MB | GPU +677.1 MB
+    Load Time       : 10.26s
+    Inference Time  : 1.12s (7.6 ms/doc | 131.6 docs/sec)
+    Peak Memory     : CPU +20.0 MB | GPU +677.1 MB
   Processed     : 600 (100.0%)
   With entities : 452 (75.3% of processed)
   No entities   : 148 (24.7% of processed)
@@ -569,9 +583,9 @@ wikineural-multilingual-ner_ner_pred (MULTI):
   Total rows    : 600
   Benchmark & Resource Metrics:
     Device          : GPU (cuda:0)
-    Load Time       : 1.91s
-    Inference Time  : 7.31s (12.2 ms/doc | 82.1 docs/sec)
-    Peak Memory     : CPU +35.0 MB | GPU +677.1 MB
+    Load Time       : 11.68s
+    Inference Time  : 0.71s (7.7 ms/doc | 129.3 docs/sec)
+    Peak Memory     : CPU +36.6 MB | GPU +677.1 MB
   Processed     : 600 (100.0%)
   With entities : 508 (84.7% of processed)
   No entities   : 92 (15.3% of processed)
