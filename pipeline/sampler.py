@@ -4,7 +4,7 @@ Stage 1 — Sampling & Preprocessing
 
 Fetches unprocessed articles from the DB, runs fastText language detection,
 filters to supported languages, preprocesses text for NER / Sentiment / Topic,
-and pre-inserts placeholder rows into articles_enriched.
+and pre-inserts placeholder rows into article_sentiments & qwen_article_sentiments.
 
 Returns:
     work_df   — DataFrame of valid articles with preprocessed text columns
@@ -54,7 +54,7 @@ def run_sampling(
     # 1) Fetch unprocessed articles
     # ------------------------------------------------------------------
     is_qwen_only = Config.RUN_QWEN and not (Config.RUN_NER or Config.RUN_SENTIMENT or Config.RUN_TOPIC)
-    enrich_table = "qwen_articles_enriched" if is_qwen_only else "articles_enriched"
+    enrich_table = "qwen_article_sentiments" if is_qwen_only else "article_sentiments"
 
     query = f"""
         SELECT a.id, a.body, a.id_language, a.id_categories
@@ -109,25 +109,26 @@ def run_sampling(
     # ------------------------------------------------------------------
     for r in skipped_df.itertuples(index=False):
         aid = int(r.id)
-        db.upsert_articles_enriched(
+        db.upsert_article_sentiments(
             article_id=aid,
             language=None,
             sentiment_label="SKIPPED",
         )
-        db.upsert_qwen_articles_enriched(
+        db.upsert_qwen_article_sentiments(
             article_id=aid,
             language=None,
             sentiment_label="SKIPPED",
         )
         db.upsert_article_topic(
             article_id=aid,
+            language=None,
             topic_label="SKIPPED",
             confidence_score=None,
         )
         db.upsert_qwen_article_topic(
             article_id=aid,
+            language=None,
             topic_label="SKIPPED",
-            confidence_score=None,
         )
 
     if work_df.empty:
@@ -159,25 +160,26 @@ def run_sampling(
         logger.info(f"Marking {len(empty_df)} empty preprocessed articles as SKIPPED (language=NULL)")
         for r in empty_df.itertuples(index=False):
             aid = int(r.id)
-            db.upsert_articles_enriched(
+            db.upsert_article_sentiments(
                 article_id=aid,
                 language=None,
                 sentiment_label="SKIPPED",
             )
-            db.upsert_qwen_articles_enriched(
+            db.upsert_qwen_article_sentiments(
                 article_id=aid,
                 language=None,
                 sentiment_label="SKIPPED",
             )
             db.upsert_article_topic(
                 article_id=aid,
+                language=None,
                 topic_label="SKIPPED",
                 confidence_score=None,
             )
             db.upsert_qwen_article_topic(
                 article_id=aid,
+                language=None,
                 topic_label="SKIPPED",
-                confidence_score=None,
             )
 
     if work_df.empty:
@@ -185,12 +187,14 @@ def run_sampling(
         return work_df, pd.concat([skipped_df, empty_df], ignore_index=True)
 
     # ------------------------------------------------------------------
-    # 6) Pre-insert placeholder rows in articles_enriched & qwen_articles_enriched
+    # 6) Pre-insert placeholder rows in article_sentiments & qwen_article_sentiments
     # ------------------------------------------------------------------
     for r in work_df.itertuples(index=False):
         aid  = int(r.id)
         lang = str(r.lang)
-        db.upsert_articles_enriched(article_id=aid, language=lang)
-        db.upsert_qwen_articles_enriched(article_id=aid, language=lang)
+        db.upsert_article_sentiments(article_id=aid, language=lang)
+        db.upsert_qwen_article_sentiments(article_id=aid, language=lang)
+        db.upsert_article_topic(article_id=aid, language=lang)
+        db.upsert_qwen_article_topic(article_id=aid, language=lang)
 
     return work_df, skipped_df

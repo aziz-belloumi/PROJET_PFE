@@ -111,16 +111,20 @@ def topic_peaks(
     # ---------------------------------------------------------
     topic_full = topic_full.sort_values(["topic_label", "year_month"]).reset_index(drop=True)
 
-    def _compute(g: pd.DataFrame) -> pd.DataFrame:
-        g = g.sort_values("year_month").copy()
-        g["roll_mean"] = g["topic_share"].rolling(window=window, min_periods=min_periods).mean()
-        g["roll_std"] = g["topic_share"].rolling(window=window, min_periods=min_periods).std(ddof=1)
+    topic_full["roll_mean"] = (
+        topic_full.groupby("topic_label")["topic_share"]
+        .transform(lambda s: s.rolling(window=window, min_periods=min_periods).mean())
+    )
+    topic_full["roll_std"] = (
+        topic_full.groupby("topic_label")["topic_share"]
+        .transform(lambda s: s.rolling(window=window, min_periods=min_periods).std(ddof=1))
+    )
 
-        g["z_score"] = (g["topic_share"] - g["roll_mean"]) / g["roll_std"]
-        g.loc[g["roll_std"].isna() | (g["roll_std"] == 0) | (g["total_articles_in_month"] == 0), "z_score"] = 0.0
-        return g
-
-    topic_full = topic_full.groupby("topic_label", group_keys=False).apply(_compute)
+    topic_full["z_score"] = (topic_full["topic_share"] - topic_full["roll_mean"]) / topic_full["roll_std"]
+    topic_full.loc[
+        topic_full["roll_std"].isna() | (topic_full["roll_std"] == 0) | (topic_full["total_articles_in_month"] == 0),
+        "z_score",
+    ] = 0.0
 
     peaks = topic_full[
         (topic_full["total_articles_in_month"] >= int(min_articles_in_month)) &

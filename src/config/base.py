@@ -39,6 +39,3 @@ class BaseConfig:
     CHUNK_SIZE = getenv("CHUNK_SIZE", 3000, int)
     CHUNK_OVERLAP = getenv("CHUNK_OVERLAP", 400, int)
 
-    LOG_LEVEL = getenv("LOG_LEVEL", "WARNING")
-    LOG_FORMAT = getenv("LOG_FORMAT", "%(asctime)s - %(levelname)s - %(message)s")
-    LOG_DATE_FORMAT = getenv("LOG_DATE_FORMAT", "%Y-%m-%d %H:%M:%S")

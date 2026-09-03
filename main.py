@@ -20,7 +20,6 @@ from src.text_utils import init_console_encoding
 init_console_encoding()
 
 from src.config import Config
-from src.logger import setup_run
 from src.db_config import DatabaseConnection
 from src.ner_extraction import GLiNERNER, TransformersNER
 from src.sentiment_extraction import LLMSentiment
@@ -130,8 +129,13 @@ def main():
     }
 
     # ---- Setup logger ----
-    ctx = setup_run(run_config=run_config)
-    logger = ctx.logger
+    logging.basicConfig(
+        level=logging.WARNING,
+        format="%(asctime)s - %(levelname)s - %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
+    logger = logging.getLogger("nlp_pipeline")
+    logger.setLevel(logging.INFO)
 
     # ---- System info banner ----
     vram_mb = (
@@ -162,13 +166,10 @@ def main():
         return
 
     # ================================================================
-    # STAGE 2 — CPU Timing Pass (Temporarily Commented)
+    # STAGE 2 — GPU Model Inference (NER, Sentiment, Topic)
     # ================================================================
     gpu_time_ner_ms, gpu_time_sentiment_ms, gpu_time_topic_ms = {}, {}, {}
 
-    # ================================================================
-    # STAGE 3 — GPU Inference + DB Writes
-    # ================================================================
     if not (Config.RUN_NER or Config.RUN_SENTIMENT or Config.RUN_TOPIC):
         logger.info("BERT models disabled (RUN_NER=False, RUN_SENTIMENT=False, RUN_TOPIC=False) → GPU pass skipped.")
         sent_results_buffer  = {}
@@ -199,8 +200,15 @@ def main():
             logger=logger,
         )
 
+    # Update global entity mention counts in entities dictionary
+    try:
+        db.update_entity_frequencies()
+        logger.info("Global entity frequencies updated.")
+    except Exception as e:
+        logger.error(f"Failed to update entity frequencies: {e}")
+
     # ================================================================
-    # STAGE 3.5 — Qwen (Ollama) Pass
+    # STAGE 3 — Comparative Qwen 2.5 LLM Pass (Optional)
     # ================================================================
     if Config.RUN_QWEN:
         try:
@@ -209,35 +217,24 @@ def main():
         except Exception as e:
             logger.error(f"Failed to run Qwen pass: {e}")
 
-
     # ================================================================
-    # STAGE 4 — Analytics & Comparison Reports
+    # STAGE 4 — Analytics DB Tables & Optional Summary CSV
     # ================================================================
-    if Config.GENERATE_REPORTS:
-        reports_dir = Path("analysis/reports")
-        reports_dir.mkdir(parents=True, exist_ok=True)
-        try:
-            generate_analytics_reports(
-                run_dir=reports_dir,
-                raw_table=raw_table,
-                top_entities_k=50,
-                top_entities_by_month_k=50,
-                peaks_window=6,
-                peaks_z_threshold=2.5,
-                default_country_id=8,
-            )
-            logger.info("Analytics CSVs generated in analysis/reports.")
-        except Exception as e:
-            logger.error(f"Analytics report failed: {e}")
-
-    # ================================================================
-    # STAGE 5 — Global Entity Frequencies
-    # ================================================================
+    reports_dir = Path("analysis/reports")
     try:
-        db.update_entity_frequencies()
-        logger.info("Global entity frequencies updated.")
+        generate_analytics_reports(
+            run_dir=reports_dir,
+            raw_table=raw_table,
+            top_entities_k=50,
+            top_entities_by_month_k=50,
+            peaks_window=6,
+            peaks_z_threshold=2.5,
+            default_country_id=8,
+            export_summary_csv=Config.EXPORT_ANALYTICS_CSV,
+        )
+        logger.info("Analytics DB tables and summary report updated.")
     except Exception as e:
-        logger.error(f"Failed to update entity frequencies: {e}")
+        logger.error(f"Analytics report failed: {e}")
 
     logger.info(f"Pipeline complete in {time.perf_counter() - pipeline_t0:.2f}s")
     db.close()

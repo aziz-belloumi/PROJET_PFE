@@ -1,23 +1,22 @@
-# src/config/pipeline.py
-"""
-Pipeline execution toggles, sampling sizes, and quality gate thresholds.
-"""
-
 from __future__ import annotations
-
-from .base import getenv
 
 
 class PipelineConfig:
-    SAMPLE_SIZE = getenv("SAMPLE_SIZE", 100, int)
+    # Sampling size (batch limit)
+    SAMPLE_SIZE: int = 1000
 
-    RUN_NER = getenv("RUN_NER", False, bool)
-    RUN_SENTIMENT = getenv("RUN_SENTIMENT", False, bool)
-    RUN_TOPIC = getenv("RUN_TOPIC", False, bool)
-    RUN_QWEN = getenv("RUN_QWEN", True, bool)
-    GENERATE_REPORTS = getenv("GENERATE_REPORTS", False, bool)
+    # Pipeline task execution toggles
+    RUN_NER: bool = True
+    RUN_SENTIMENT: bool = True
+    RUN_TOPIC: bool = True
+    RUN_QWEN: bool = False
 
-    LANG_THRESHOLD = getenv("LANG_THRESHOLD", 0.51, float)
+    # Language confidence threshold
+    LANG_THRESHOLD: float = 0.51
 
-    TOPIC_MIN_TEXT_CHARS = getenv("TOPIC_MIN_TEXT_CHARS", 30, int)
-    TOPIC_MIN_TEXT_WORDS = getenv("TOPIC_MIN_TEXT_WORDS", 5, int)
+    # Topic classification minimum content filters
+    TOPIC_MIN_TEXT_CHARS: int = 30
+    TOPIC_MIN_TEXT_WORDS: int = 5
+
+    # Analytics options
+    EXPORT_ANALYTICS_CSV: bool = True

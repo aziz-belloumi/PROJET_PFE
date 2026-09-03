@@ -102,11 +102,15 @@ class DatabaseConnection:
         "article_topics",
         "article_entities",
         "entities",
-        "articles_enriched",
+        "article_sentiments",
         "qwen_article_topics",
-        "qwen_articles_enriched",
+        "qwen_article_sentiments",
         "benchmark_results",
         "qwen_benchmark_results",
+        "analytics_topics_by_month",
+        "analytics_topic_peaks",
+        "analytics_entities_by_month",
+        "analytics_top_entities_by_country",
     ]
 
     def drop_result_tables(self):
@@ -121,9 +125,9 @@ class DatabaseConnection:
 
     def create_result_tables(self):
         tables = [
-            # 1) articles_enriched (unified LLM results)
+            # 1) article_sentiments (unified LLM results)
             """
-            CREATE TABLE IF NOT EXISTS articles_enriched (
+            CREATE TABLE IF NOT EXISTS article_sentiments (
                 article_id      BIGINT NOT NULL,
                 language        VARCHAR(10),
                 sentiment_label VARCHAR(10),
@@ -173,11 +177,13 @@ class DatabaseConnection:
             """
             CREATE TABLE IF NOT EXISTS article_topics (
                 article_id  BIGINT NOT NULL,
-                topic_label VARCHAR(100) NOT NULL,
+                language    VARCHAR(10),
+                topic_label VARCHAR(100),
                 topic_score FLOAT,
 
                 PRIMARY KEY (article_id),
-                INDEX idx_topic (topic_label)
+                INDEX idx_topic (topic_label),
+                INDEX idx_topic_lang (language)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
             """,
 
@@ -185,20 +191,20 @@ class DatabaseConnection:
             """
             CREATE TABLE IF NOT EXISTS qwen_article_topics (
                 article_id  BIGINT NOT NULL,
-                topic_label VARCHAR(100) NOT NULL,
-                topic_score FLOAT,
+                language    VARCHAR(10),
+                topic_label VARCHAR(100),
 
                 PRIMARY KEY (article_id),
-                INDEX idx_qwen_topic (topic_label)
+                INDEX idx_qwen_topic (topic_label),
+                INDEX idx_qwen_topic_lang (language)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
             """,
 
             """
-            CREATE TABLE IF NOT EXISTS qwen_articles_enriched (
+            CREATE TABLE IF NOT EXISTS qwen_article_sentiments (
                 article_id      BIGINT NOT NULL,
                 language        VARCHAR(10),
                 sentiment_label VARCHAR(10),
-                sentiment_score FLOAT,
 
                 PRIMARY KEY (article_id),
                 INDEX idx_qwen_lang (language)
@@ -244,9 +250,96 @@ class DatabaseConnection:
                 INDEX idx_qwen_benchmark_results_article (article_id)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
             """,
+
+            # 8) Analytics: topics distribution by month
+            """
+            CREATE TABLE IF NOT EXISTS analytics_topics_by_month (
+                `id`                      BIGINT AUTO_INCREMENT PRIMARY KEY,
+                `year_month`              VARCHAR(7) NOT NULL,
+                `topic_label`             VARCHAR(100) NOT NULL,
+                `articles_count`          INT NOT NULL,
+                `topic_share`             FLOAT NOT NULL,
+                `total_articles_in_month` INT NOT NULL,
+                `created_at`              TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+                INDEX `idx_atbm_topic` (`topic_label`),
+                INDEX `idx_atbm_ym` (`year_month`)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+            """,
+
+            # 9) Analytics: topic peaks & anomalies
+            """
+            CREATE TABLE IF NOT EXISTS analytics_topic_peaks (
+                `id`                      BIGINT AUTO_INCREMENT PRIMARY KEY,
+                `year_month`              VARCHAR(7) NOT NULL,
+                `topic_label`             VARCHAR(100) NOT NULL,
+                `articles_count`          INT NOT NULL,
+                `total_articles_in_month` INT NOT NULL,
+                `topic_share`             FLOAT NOT NULL,
+                `roll_mean`               FLOAT NOT NULL,
+                `roll_std`                FLOAT NOT NULL,
+                `z_score`                 FLOAT NOT NULL,
+                `created_at`              TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+                INDEX `idx_atp_ym` (`year_month`),
+                INDEX `idx_atp_topic` (`topic_label`),
+                INDEX `idx_atp_zscore` (`z_score`)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+            """,
+
+            # 10) Analytics: entities by month
+            """
+            CREATE TABLE IF NOT EXISTS analytics_entities_by_month (
+                `id`                      BIGINT AUTO_INCREMENT PRIMARY KEY,
+                `year_month`              VARCHAR(7) NOT NULL,
+                `rank_in_month`           INT NOT NULL,
+                `entity_type`             VARCHAR(20) NOT NULL,
+                `normalized_name`         VARCHAR(512) NOT NULL,
+                `distinct_articles_count` INT NOT NULL,
+                `mentions_count`          INT NOT NULL,
+                `mean_confidence`         FLOAT NOT NULL,
+                `created_at`              TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+                INDEX `idx_aebm_ym` (`year_month`),
+                INDEX `idx_aebm_type` (`entity_type`),
+                INDEX `idx_aebm_norm` (`normalized_name`),
+                INDEX `idx_aebm_rank` (`rank_in_month`)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+            """,
+
+            # 11) Analytics: top entities by country
+            """
+            CREATE TABLE IF NOT EXISTS analytics_top_entities_by_country (
+                `id`                      BIGINT AUTO_INCREMENT PRIMARY KEY,
+                `country_id`              INT NOT NULL,
+                `label_en`                VARCHAR(100),
+                `rank_in_country`         INT NOT NULL,
+                `entity_type`             VARCHAR(20) NOT NULL,
+                `normalized_name`         VARCHAR(512) NOT NULL,
+                `distinct_articles_count` INT NOT NULL,
+                `mentions_count`          INT NOT NULL,
+                `mean_confidence`         FLOAT NOT NULL,
+                `created_at`              TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+                INDEX `idx_atebc_country` (`country_id`),
+                INDEX `idx_atebc_type` (`entity_type`),
+                INDEX `idx_atebc_norm` (`normalized_name`),
+                INDEX `idx_atebc_rank` (`rank_in_country`)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+            """,
         ]
 
         # Cross-version safe schema migrations (MySQL 5.7, 8.0+, MariaDB)
+        def _safe_rename_table(conn, old_table: str, new_table: str):
+            try:
+                res_old = conn.execute(text(f"SHOW TABLES LIKE '{old_table}'")).fetchone()
+                res_new = conn.execute(text(f"SHOW TABLES LIKE '{new_table}'")).fetchone()
+                if res_old and not res_new:
+                    conn.execute(text(f"RENAME TABLE {old_table} TO {new_table}"))
+                    conn.commit()
+            except Exception as e:
+                self.logger.debug(f"Migration note renaming {old_table} to {new_table}: {e}")
+
         def _safe_add_column(conn, table: str, col: str, col_type: str):
             try:
                 res = conn.execute(text(f"SHOW COLUMNS FROM {table} LIKE '{col}'")).fetchone()
@@ -274,8 +367,36 @@ class DatabaseConnection:
             except Exception as e:
                 self.logger.debug(f"Migration note dropping index {table}.{idx}: {e}")
 
+        def _safe_fix_analytics_tables(conn):
+            # Drop legacy / redundant table
+            try:
+                conn.execute(text("DROP TABLE IF EXISTS analytics_dominant_topics"))
+                conn.commit()
+            except Exception:
+                pass
+
+            analytics_tables = [
+                "analytics_topics_by_month",
+                "analytics_topic_peaks",
+                "analytics_entities_by_month",
+                "analytics_top_entities_by_country",
+            ]
+            for t in analytics_tables:
+                try:
+                    res = conn.execute(text(f"SHOW COLUMNS FROM {t} LIKE 'id'")).fetchone()
+                    if not res:
+                        conn.execute(text(f"DROP TABLE IF EXISTS {t}"))
+                        conn.commit()
+                except Exception:
+                    pass
+
         try:
             with self.engine.connect() as conn:
+                # 0) Safe rename old table names if they exist
+                _safe_rename_table(conn, "articles_enriched", "article_sentiments")
+                _safe_rename_table(conn, "qwen_articles_enriched", "qwen_article_sentiments")
+                _safe_fix_analytics_tables(conn)
+
                 for sql in tables:
                     try:
                         conn.execute(text(sql))
@@ -284,16 +405,18 @@ class DatabaseConnection:
                         self.logger.error(f"Error executing table creation: {e}")
 
                 # Safe migrations
-                _safe_add_column(conn, "articles_enriched", "sentiment_score", "FLOAT")
+                _safe_add_column(conn, "article_sentiments", "sentiment_score", "FLOAT")
+                _safe_add_column(conn, "article_topics", "language", "VARCHAR(10)")
                 _safe_add_column(conn, "article_topics", "topic_score", "FLOAT")
-                _safe_add_column(conn, "qwen_article_topics", "topic_score", "FLOAT")
-                _safe_add_column(conn, "qwen_articles_enriched", "sentiment_score", "FLOAT")
+                _safe_add_column(conn, "qwen_article_topics", "language", "VARCHAR(10)")
 
-                _safe_drop_column(conn, "articles_enriched", "gpu_time_ner")
-                _safe_drop_column(conn, "articles_enriched", "gpu_time_sentiment")
-                _safe_drop_column(conn, "articles_enriched", "gpu_time_topic")
-                _safe_drop_column(conn, "qwen_articles_enriched", "gpu_time_sentiment")
-                _safe_drop_column(conn, "qwen_articles_enriched", "gpu_time_topic")
+                _safe_drop_column(conn, "qwen_article_topics", "topic_score")
+                _safe_drop_column(conn, "qwen_article_sentiments", "sentiment_score")
+                _safe_drop_column(conn, "article_sentiments", "gpu_time_ner")
+                _safe_drop_column(conn, "article_sentiments", "gpu_time_sentiment")
+                _safe_drop_column(conn, "article_sentiments", "gpu_time_topic")
+                _safe_drop_column(conn, "qwen_article_sentiments", "gpu_time_sentiment")
+                _safe_drop_column(conn, "qwen_article_sentiments", "gpu_time_topic")
                 _safe_drop_column(conn, "benchmark_results", "load_time_sec")
                 _safe_drop_column(conn, "qwen_benchmark_results", "load_time_sec")
 
@@ -385,48 +508,48 @@ class DatabaseConnection:
     def upsert_qwen_article_topic(
         self,
         article_id: int,
-        topic_label: str,
-        confidence_score: float | None = None,
-    ):
-        sql = """
-        INSERT INTO qwen_article_topics (article_id, topic_label, topic_score)
-        VALUES (:aid, :lab, :score)
-        ON DUPLICATE KEY UPDATE
-            topic_label = VALUES(topic_label),
-            topic_score = COALESCE(VALUES(topic_score), topic_score)
-        """
-        self.execute_write(sql, {
-            "aid": int(article_id),
-            "lab": str(topic_label),
-            "score": float(confidence_score) if confidence_score is not None else None,
-        })
-
-    def upsert_qwen_articles_enriched(
-        self,
-        article_id: int,
         language: str | None = None,
-        sentiment_label: str | None = None,
-        sentiment_score: float | None = None,
+        topic_label: str | None = None,
     ):
         sql = """
-        INSERT INTO qwen_articles_enriched (
-            article_id, language, sentiment_label, sentiment_score
-        ) VALUES (
-            :aid, :lang, :sent, :score
-        )
+        INSERT INTO qwen_article_topics (article_id, language, topic_label)
+        VALUES (:aid, :lang, :lab)
         ON DUPLICATE KEY UPDATE
             language = COALESCE(VALUES(language), language),
-            sentiment_label = COALESCE(VALUES(sentiment_label), sentiment_label),
-            sentiment_score = COALESCE(VALUES(sentiment_score), sentiment_score)
+            topic_label = COALESCE(VALUES(topic_label), topic_label)
         """
         self.execute_write(sql, {
             "aid": int(article_id),
             "lang": language,
-            "sent": sentiment_label,
-            "score": float(sentiment_score) if sentiment_score is not None else None,
+            "lab": str(topic_label) if topic_label is not None else None,
         })
 
-    def upsert_articles_enriched(
+    def upsert_qwen_article_sentiments(
+        self,
+        article_id: int,
+        language: str | None = None,
+        sentiment_label: str | None = None,
+    ):
+        sql = """
+        INSERT INTO qwen_article_sentiments (
+            article_id, language, sentiment_label
+        ) VALUES (
+            :aid, :lang, :sent
+        )
+        ON DUPLICATE KEY UPDATE
+            language = COALESCE(VALUES(language), language),
+            sentiment_label = COALESCE(VALUES(sentiment_label), sentiment_label)
+        """
+        self.execute_write(sql, {
+            "aid": int(article_id),
+            "lang": language,
+            "sent": str(sentiment_label) if sentiment_label is not None else None,
+        })
+
+    # Alias for backwards compatibility
+    upsert_qwen_articles_enriched = upsert_qwen_article_sentiments
+
+    def upsert_article_sentiments(
         self,
         article_id: int,
         language: str | None = None,
@@ -434,7 +557,7 @@ class DatabaseConnection:
         sentiment_score: float | None = None,
     ):
         sql = """
-        INSERT INTO articles_enriched (
+        INSERT INTO article_sentiments (
             article_id, language,
             sentiment_label, sentiment_score
         ) VALUES (
@@ -449,9 +572,12 @@ class DatabaseConnection:
         self.execute_write(sql, {
             "aid":     int(article_id),
             "lang":    language,
-            "s_lbl":   sentiment_label,
+            "s_lbl":   str(sentiment_label) if sentiment_label is not None else None,
             "s_score": float(sentiment_score) if sentiment_score is not None else None,
         })
+
+    # Alias for backwards compatibility
+    upsert_articles_enriched = upsert_article_sentiments
 
     def find_similar_entity(
         self,
@@ -570,22 +696,55 @@ class DatabaseConnection:
     def upsert_article_topic(
         self,
         article_id: int,
-        topic_label: str,
+        language: str | None = None,
+        topic_label: str | None = None,
         confidence_score: float | None = None,
     ):
-        """Insert or update an article's topic assignment and confidence score."""
+        """Insert or update an article's topic assignment, language, and confidence score."""
         sql = """
-        INSERT INTO article_topics (article_id, topic_label, topic_score)
-        VALUES (:aid, :lab, :score)
+        INSERT INTO article_topics (article_id, language, topic_label, topic_score)
+        VALUES (:aid, :lang, :lab, :score)
         ON DUPLICATE KEY UPDATE
-            topic_label = VALUES(topic_label),
+            language = COALESCE(VALUES(language), language),
+            topic_label = COALESCE(VALUES(topic_label), topic_label),
             topic_score = COALESCE(VALUES(topic_score), topic_score)
         """
         self.execute_write(sql, {
             "aid": int(article_id),
-            "lab": str(topic_label),
+            "lang": language,
+            "lab": str(topic_label) if topic_label is not None else None,
             "score": float(confidence_score) if confidence_score is not None else None,
         })
+
+    def save_analytics_dataframe(self, df, table_name: str) -> int:
+        """
+        Store an analytics DataFrame into a MySQL table, refreshing its content.
+        Uses TRUNCATE before bulk insertion to preserve custom indexes and primary keys.
+        """
+        if df is None or getattr(df, "empty", True):
+            return 0
+        try:
+            with self.engine.begin() as conn:
+                try:
+                    conn.execute(text(f"TRUNCATE TABLE `{table_name}`"))
+                except Exception as e:
+                    self.logger.debug(f"Could not truncate {table_name}: {e}")
+                df.to_sql(name=table_name, con=conn, if_exists="append", index=False)
+            self.logger.info(f"Persisted {len(df)} rows to DB table `{table_name}`.")
+            return len(df)
+        except Exception as e:
+            # Automatic fallback: drop outdated/legacy table schema and recreate fresh
+            try:
+                with self.engine.begin() as conn:
+                    conn.execute(text(f"DROP TABLE IF EXISTS `{table_name}`"))
+                self.create_result_tables()
+                with self.engine.begin() as conn:
+                    df.to_sql(name=table_name, con=conn, if_exists="append", index=False)
+                self.logger.info(f"Persisted {len(df)} rows to newly created DB table `{table_name}`.")
+                return len(df)
+            except Exception as e2:
+                self.logger.error(f"Error saving analytics dataframe to `{table_name}`: {e2}")
+                return 0
 
     def close(self):
         """Gracefully close and dispose the connection pool."""

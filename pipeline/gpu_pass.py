@@ -280,7 +280,7 @@ def run_gpu_pass(
                 gpu_time_topic_ms[(aid, 0)]   = 0
                 peak_topic_mb[aid]            = None
                 topic_results_buffer[(aid, 0)] = {"label": label, "score": 0.0}
-                db.upsert_article_topic(article_id=aid, topic_label=label, confidence_score=0.0)
+                db.upsert_article_topic(article_id=aid, language=lang, topic_label=label, confidence_score=0.0)
                 continue
 
             lang_extractors = extractors_by_lang.get(lang, {})
@@ -289,7 +289,7 @@ def run_gpu_pass(
                 gpu_time_topic_ms[(aid, 0)]   = 0
                 peak_topic_mb[aid]            = None
                 topic_results_buffer[(aid, 0)] = {"label": label, "score": 0.0}
-                db.upsert_article_topic(article_id=aid, topic_label=label, confidence_score=0.0)
+                db.upsert_article_topic(article_id=aid, language=lang, topic_label=label, confidence_score=0.0)
                 continue
 
             mv, ext_info = next(iter(lang_extractors.items()))
@@ -316,7 +316,7 @@ def run_gpu_pass(
             gpu_time_topic_ms[(aid, mv)]   = elapsed_ms
             peak_topic_mb[aid]             = _read_peak_mb(gpu_device) if cuda_ok else None
             topic_results_buffer[(aid, mv)] = {"label": safe_label, "score": safe_score}
-            db.upsert_article_topic(article_id=aid, topic_label=safe_label, confidence_score=safe_score)
+            db.upsert_article_topic(article_id=aid, language=lang, topic_label=safe_label, confidence_score=safe_score)
 
         pbar.close()
 
@@ -329,14 +329,14 @@ def run_gpu_pass(
                 except Exception:
                     pass
 
-    # ----------------------------------- Write articles_enriched rows --------
+    # ----------------------------------- Write article_sentiments rows --------
     for r in work_df.itertuples(index=False):
         aid  = int(r.id)
         lang = str(r.lang)
 
         sent_info  = sent_results_buffer.get((aid, 0), {})
 
-        db.upsert_articles_enriched(
+        db.upsert_article_sentiments(
             article_id=aid,
             language=lang,
             sentiment_label=sent_info.get("label"),

@@ -22,15 +22,15 @@ def run_qwen_pass(
     if skipped_df is not None and not skipped_df.empty:
         for r in skipped_df.itertuples(index=False):
             aid = int(r.id)
-            db.upsert_qwen_articles_enriched(
+            db.upsert_qwen_article_sentiments(
                 article_id=aid,
                 language=None,
                 sentiment_label="SKIPPED",
             )
             db.upsert_qwen_article_topic(
                 article_id=aid,
+                language=None,
                 topic_label="SKIPPED",
-                confidence_score=None,
             )
 
     if work_df.empty:
@@ -63,11 +63,9 @@ def run_qwen_pass(
         try:
             sent_res = sentiment_model.predict(r.text_sentiment, lang)
             sent_label = sent_res.label
-            sent_score = sent_res.score
         except Exception as e:
             logger.error(f"[QWEN] Sentiment failed for article {aid}: {e}")
             sent_label = "NEUTRAL"
-            sent_score = 0.0
         gpu_time_sent = int((time.perf_counter() - t0) * 1000)
         
         # 2. Topic
@@ -75,27 +73,24 @@ def run_qwen_pass(
         try:
             topic_res = topic_model.predict(getattr(r, "text_topic", r.text_sentiment), lang)
             topic_label = topic_res.label
-            topic_score = topic_res.score
         except Exception as e:
             logger.error(f"[QWEN] Topic failed for article {aid}: {e}")
             topic_label = "General"
-            topic_score = 0.0
         gpu_time_topic = int((time.perf_counter() - t0) * 1000)
         
         # 3. Update DB
-        # Update topic in qwen_article_topics
+        # Update topic in qwen_article_topics (with language, without score)
         db.upsert_qwen_article_topic(
             article_id=aid,
+            language=lang,
             topic_label=topic_label,
-            confidence_score=topic_score,
         )
         
-        # Update sentiment in qwen_articles_enriched
-        db.upsert_qwen_articles_enriched(
+        # Update sentiment in qwen_article_sentiments (with language, without score)
+        db.upsert_qwen_article_sentiments(
             article_id=aid,
             language=lang,
             sentiment_label=sent_label,
-            sentiment_score=sent_score,
         )
 
         # Update Qwen benchmarks
