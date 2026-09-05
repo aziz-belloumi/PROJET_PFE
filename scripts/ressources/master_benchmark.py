@@ -22,9 +22,9 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from src.config import Config
-from src.ner_extraction import GLiNERNER, TransformersNER
-from src.sentiment_extraction import LLMSentiment
-from src.topic_extraction import LLMTopic
+from src.ner import GLiNERNER, TransformersNER
+from src.sentiment import LLMSentiment
+from src.topic import LLMTopic
 
 CSV_CANDIDATES = [
     PROJECT_ROOT / "data" / "manual_eval_global.csv",

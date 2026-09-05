@@ -11,11 +11,11 @@ import torch
 from tqdm import tqdm
 
 from src.config import Config
-from src.db_config import DatabaseConnection
-from src.ner_extraction import TransformersNER, GLiNERNER, DEFAULT_NER_PARAMS, ModelLoadError
-from src.sentiment_extraction import LLMSentiment, DEFAULT_SENTIMENT_PARAMS
+from src.config.db_config import DatabaseConnection
+from src.ner import TransformersNER, GLiNERNER
+from src.sentiment import LLMSentiment
 from src.preprocessing import PreprocessRouter
-from src.topic_extraction import LLMTopic, TransformerTopic
+from src.topic import LLMTopic, TransformerTopic
 
 
 # ---------------------------------------------------------------------------
@@ -93,9 +93,6 @@ def run_gpu_pass(
     topic_extractors: List[Tuple[int, str]],
     ner_params: dict,
     sentiment_params: dict,
-    cpu_time_ner_ms: dict,
-    cpu_time_sentiment_ms: dict,
-    cpu_time_topic_ms: dict,
     logger: logging.Logger,
 ) -> tuple[dict, dict, dict, dict, dict, dict]:
     """
@@ -109,9 +106,6 @@ def run_gpu_pass(
         topic_extractors:       [(mv, extractor_type, lang), ...]
         ner_params:             NER hyperparameters.
         sentiment_params:       Sentiment hyperparameters.
-        cpu_time_ner_ms:        Timing results from CPU pass.
-        cpu_time_sentiment_ms:  Timing results from CPU pass.
-        cpu_time_topic_ms:      Timing results from CPU pass.
         logger:                 Logger instance.
 
     Returns:
@@ -164,10 +158,9 @@ def run_gpu_pass(
 
                     cuda_ok = _reset_peak(gpu_device, logger, "NER")
                     t0 = time.perf_counter()
-                    if is_gliner:
-                        ents = ner.predict(r.text_ner, language=lang)
-                    else:
-                        ents = ner.predict(r.text_ner)
+                    # Pass language to both GLiNER (threshold selection) and
+                    # TransformersNER (future per-language logic / symmetry).
+                    ents = ner.predict(r.text_ner, language=lang)
                     _cuda_sync(gpu_device)
                     elapsed_ms = int((time.perf_counter() - t0) * 1000)
 

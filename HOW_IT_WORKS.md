@@ -139,30 +139,30 @@ PROJET_PFE/
 │
 ├── pipeline/                       # Pipeline Execution Stages
 │   ├── __init__.py                 # Package marker
-│   ├── sampler.py                  # Stage 1: Batch sampling, fastText language detection, task preprocessing
-│   ├── gpu_pass.py                 # Stage 2: Sequential GPU inference for NER, Sentiment, & Topic models
-│   └── cpu_pass.py                 # Legacy / CPU-only inference runner and benchmark harness
+│   ├── cpu_pass.py                 # Stage 1: CPU Pass — Batch sampling, fastText language detection, task preprocessing
+│   ├── gpu_pass.py                 # Stage 2: GPU Pass — Sequential GPU inference for NER, Sentiment, & Topic models
+│   └── sampler.py                  # Backward-compatible alias for cpu_pass.py
 │
 ├── src/                            # Core Application Modules & NLP Engines
 │   ├── __init__.py                 # Package marker
-│   ├── db_config.py                # SQLAlchemy engine, connection pooling, migrations, atomic upserts
-│   ├── language_detection.py       # FastTextLanguageDetector & ArticleClassifier
-│   ├── ner_extraction.py           # GLiNERNER & TransformersNER engines with unified 8-class taxonomy
-│   ├── sentiment_extraction.py     # LLMSentiment classifier with multi-chunk voting & heuristic overrides
-│   ├── topic_extraction.py         # TransformerTopic (fine-tuned) & LLMTopic (zero-shot) classifiers
-│   ├── chunking.py                 # Token-aware sliding window chunking utility
-│   ├── text_utils.py               # UTF-8 stdout configuration & BiDi/Arabic ligature terminal reshaping
 │   │
 │   ├── config/                     # Modular Configuration Sub-Package
-│   │   ├── __init__.py             # Aggregated Config class combining all configuration modules
+│   │   ├── __init__.py             # Aggregated Config class & public exports
 │   │   ├── base.py                 # Base paths, getenv() helper, and device resolution
+│   │   ├── chunking.py             # Token-aware sliding window chunking utility
 │   │   ├── db.py                   # MySQL connection parameters, pool sizes, and table name definitions
-│   │   ├── models.py               # Model names, Hugging Face repo IDs, local paths, and MODEL_ID_MAP
-│   │   ├── pipeline.py             # Feature toggles (RUN_NER, RUN_SENTIMENT, RUN_TOPIC, RUN_QWEN, etc.)
-│   │   ├── hyperparameters.py      # NER confidence thresholds, chunk token limits, overlap sizes
+│   │   ├── db_config.py            # SQLAlchemy engine, connection pooling, migrations, atomic upserts
 │   │   ├── heuristics.py           # Post-classification sentiment domain cues & 18 topic category mappings
+│   │   ├── hyperparameters.py      # NER confidence thresholds, chunk token limits, overlap sizes
+│   │   ├── models.py               # Model names, Hugging Face repo IDs, local paths, and MODEL_ID_MAP
+│   │   ├── ner_labels.py           # Unified NER label mapping constants & model registries
+│   │   ├── pipeline.py             # Feature toggles (RUN_NER, RUN_SENTIMENT, RUN_TOPIC, RUN_QWEN, etc.)
 │   │   ├── preprocessing.py        # Preprocessing flag presets per language and task
 │   │   └── qwen.py                 # Ollama REST endpoint configuration, timeouts, and model tags
+│   │
+│   ├── ner/                        # Named Entity Recognition Package
+│   │   ├── __init__.py             # Exposes TransformersNER, GLiNERNER, NEREntity, ModelLoadError
+│   │   └── extractor.py            # GLiNERNER & TransformersNER engines with unified 8-class taxonomy
 │   │
 │   ├── preprocessing/              # Text Cleaning & Normalization Engine
 │   │   ├── __init__.py             # Exposes PreprocessRouter, ArabicPreprocessor, LatinPreprocessor
@@ -170,11 +170,23 @@ PROJET_PFE/
 │   │   ├── arabic.py               # Tashkeel, tatweel, ligature, and Franco-Arabic normalization
 │   │   └── latin.py                # English & French NFKC normalization, accents, URLs, noise stripping
 │   │
-│   └── qwen/                       # Comparative LLM Evaluation Pass (Ollama API)
-│       ├── __init__.py             # Package marker
-│       ├── run_qwen_pass.py        # Stage 3: Orchestration loop for Qwen 2.5 LLM inference
-│       ├── sentiment_extraction.py # Prompt builder & response parser for Qwen 3-class sentiment
-│       └── topic_extraction.py     # Prompt builder & response parser for Qwen 18-class topic mapping
+│   ├── qwen/                       # Comparative LLM Evaluation Pass (Ollama API)
+│   │   ├── __init__.py             # Package marker
+│   │   ├── run_qwen_pass.py        # Stage 3: Orchestration loop for Qwen 2.5 LLM inference
+│   │   ├── sentiment_extraction.py # Prompt builder & response parser for Qwen 3-class sentiment
+│   │   └── topic_extraction.py     # Prompt builder & response parser for Qwen 18-class topic mapping
+│   │
+│   ├── sentiment/                  # Sentiment Analysis Package
+│   │   ├── __init__.py             # Exposes LLMSentiment, SentimentResult, map_label
+│   │   └── extractor.py            # LLMSentiment classifier with multi-chunk voting & heuristic overrides
+│   │
+│   ├── topic/                      # Topic Classification Package
+│   │   ├── __init__.py             # Exposes TransformerTopic, LLMTopic, TopicResult
+│   │   └── extractor.py            # TransformerTopic (fine-tuned) & LLMTopic (zero-shot) classifiers
+│   │
+│   └── language_detection/         # Language Detection Package
+│       ├── __init__.py             # Exposes FastTextLanguageDetector, LanguageDetection
+│       └── detector.py             # fastText language detector with Arabic dialect aggregation
 │
 ├── finetuned_models/               # Local Fine-Tuned PyTorch / Hugging Face Checkpoints
 │   ├── ARABIC SENTIMENT/           # Arabic 3-class sentiment model weights & tokenizer
@@ -209,11 +221,11 @@ PROJET_PFE/
 - [`main.py`](file:///c:/Users/bello/Desktop/PROJET_PFE/main.py):
   - **Purpose:** The central orchestrator for the entire NLP enrichment pipeline.
   - **Responsibilities:**
-    1. Initializes database connections and creates target tables if absent via [`DatabaseConnection.init_result_tables()`](file:///c:/Users/bello/Desktop/PROJET_PFE/src/db_config.py).
+    1. Initializes database connections and creates target tables if absent via [`DatabaseConnection.init_result_tables()`](file:///c:/Users/bello/Desktop/PROJET_PFE/src/config/db_config.py).
     2. Invokes **Stage 1** ([`pipeline/sampler.py`](file:///c:/Users/bello/Desktop/PROJET_PFE/pipeline/sampler.py)) to fetch, language-detect, filter, and preprocess articles.
     3. Invokes **Stage 2** ([`pipeline/gpu_pass.py`](file:///c:/Users/bello/Desktop/PROJET_PFE/pipeline/gpu_pass.py)) to run sequential GPU inference across NER, Sentiment, and Topic models.
     4. Optionally triggers **Stage 3** ([`src/qwen/run_qwen_pass.py`](file:///c:/Users/bello/Desktop/PROJET_PFE/src/qwen/run_qwen_pass.py)) when `RUN_QWEN=True`.
-    5. Updates global entity frequencies via [`DatabaseConnection.update_entity_frequencies()`](file:///c:/Users/bello/Desktop/PROJET_PFE/src/db_config.py).
+    5. Updates global entity frequencies via [`DatabaseConnection.update_entity_frequencies()`](file:///c:/Users/bello/Desktop/PROJET_PFE/src/config/db_config.py).
     6. Invokes **Stage 4** ([`analysis/report_generator.py`](file:///c:/Users/bello/Desktop/PROJET_PFE/analysis/report_generator.py)) to generate SQL analytics tables and export `analytics_summary.csv`.
 - [`requirements.txt`](file:///c:/Users/bello/Desktop/PROJET_PFE/requirements.txt):
   - **Purpose:** Pinned project dependencies (`torch`, `transformers`, `gliner`, `fast-langdetect`, `sqlalchemy`, `pymysql`, `pandas`, `arabic-reshaper`, `python-bidi`, etc.).
@@ -230,22 +242,22 @@ PROJET_PFE/
 
 Contains the stage-specific runner scripts executed sequentially by `main.py`:
 
-- [`pipeline/sampler.py`](file:///c:/Users/bello/Desktop/PROJET_PFE/pipeline/sampler.py) (**Stage 1 — Sampling & Language Detection**):
+- [`pipeline/cpu_pass.py`](file:///c:/Users/bello/Desktop/PROJET_PFE/pipeline/cpu_pass.py) (**Stage 1 — CPU Pass: Sampling, Language Detection & Preprocessing**):
   - Queries `RAW_TABLE` for unprocessed articles (`sentiment_label IS NULL`) up to `SAMPLE_SIZE`.
-  - Runs language detection via [`FastTextLanguageDetector`](file:///c:/Users/bello/Desktop/PROJET_PFE/src/language_detection.py) with Arabic dialect aggregation and Arabic-script character ratio checks.
+  - Runs fastText language detection via [`FastTextLanguageDetector`](file:///c:/Users/bello/Desktop/PROJET_PFE/src/language_detection/detector.py) on CPU with Arabic dialect aggregation and script character checks.
   - Splits articles into `work_df` (supported: `ar`, `en`, `fr`) and `skipped_df` (unsupported or low confidence).
-  - Immediately writes `SKIPPED` placeholder records to `article_sentiments`, `article_topics`, `qwen_article_sentiments`, and `qwen_article_topics` for skipped articles to prevent re-processing.
+  - Immediately writes `SKIPPED` placeholder records to database tables for skipped articles to prevent re-processing.
   - Pre-inserts placeholder rows for valid articles to lock them as in-progress.
   - Prepares task-specific cleaned texts (`text_ner`, `text_sentiment`, `text_topic`) via [`PreprocessRouter`](file:///c:/Users/bello/Desktop/PROJET_PFE/src/preprocessing/router.py).
-- [`pipeline/gpu_pass.py`](file:///c:/Users/bello/Desktop/PROJET_PFE/pipeline/gpu_pass.py) (**Stage 2 — GPU Inference Pass**):
+- [`pipeline/gpu_pass.py`](file:///c:/Users/bello/Desktop/PROJET_PFE/pipeline/gpu_pass.py) (**Stage 2 — GPU Pass: Neural Model Inference**):
   - Coordinates sequential, model-by-model GPU batch inference to avoid VRAM Out-of-Memory (OOM) errors:
-    1. **NER Inference:** Runs [`GLiNERNER`](file:///c:/Users/bello/Desktop/PROJET_PFE/src/ner_extraction.py) on `text_ner`, applies adjacent entity merging and deduplication, and bulk-inserts into `article_entities` and `entities`.
-    2. **Sentiment Inference:** Runs [`LLMSentiment`](file:///c:/Users/bello/Desktop/PROJET_PFE/src/sentiment_extraction.py) on `text_sentiment` with sliding-window chunking, majority vote aggregation, and heuristic rule overrides. Writes results to `article_sentiments`.
-    3. **Topic Inference:** Runs [`TransformerTopic`](file:///c:/Users/bello/Desktop/PROJET_PFE/src/topic_extraction.py) on `text_topic` with chunk voting. Writes results to `article_topics`.
+    1. **NER Inference:** Runs [`GLiNERNER`](file:///c:/Users/bello/Desktop/PROJET_PFE/src/ner/extractor.py) and [`TransformersNER`](file:///c:/Users/bello/Desktop/PROJET_PFE/src/ner/extractor.py) on `text_ner`, applies adjacent entity merging and deduplication, and bulk-inserts into `article_entities` and `entities`.
+    2. **Sentiment Inference:** Runs [`LLMSentiment`](file:///c:/Users/bello/Desktop/PROJET_PFE/src/sentiment/extractor.py) on `text_sentiment` with sliding-window chunking, majority vote aggregation, and heuristic rule overrides. Writes results to `article_sentiments`.
+    3. **Topic Inference:** Runs [`TransformerTopic`](file:///c:/Users/bello/Desktop/PROJET_PFE/src/topic/extractor.py) on `text_topic` with chunk voting. Writes results to `article_topics`.
   - Records execution metrics (latency per document, total wall-clock time, peak VRAM allocated in MB) into `benchmark_results`.
   - Cleans VRAM using `torch.cuda.empty_cache()` and garbage collection between models.
-- [`pipeline/cpu_pass.py`](file:///c:/Users/bello/Desktop/PROJET_PFE/pipeline/cpu_pass.py):
-  - Standalone CPU benchmarking runner for measuring inference throughput on CPU hardware.
+- [`pipeline/sampler.py`](file:///c:/Users/bello/Desktop/PROJET_PFE/pipeline/sampler.py):
+  - Backward-compatible alias module re-exporting `run_cpu_pass`.
 
 ---
 
@@ -256,8 +268,11 @@ Houses the core algorithms, model wrappers, preprocessing pipelines, configurati
 ##### `src/config/` — Modular Configuration Sub-Package
 Centralizes all settings into structured sub-modules aggregated into a single unified [`Config`](file:///c:/Users/bello/Desktop/PROJET_PFE/src/config/__init__.py) class:
 - [`src/config/base.py`](file:///c:/Users/bello/Desktop/PROJET_PFE/src/config/base.py): Base class resolving repository paths, loading `.env.local`, and managing CPU/GPU device selection.
+- [`src/config/chunking.py`](file:///c:/Users/bello/Desktop/PROJET_PFE/src/config/chunking.py): Implements [`token_chunks()`](file:///c:/Users/bello/Desktop/PROJET_PFE/src/config/chunking.py), splitting long texts into overlapping token windows using Hugging Face tokenizer offset mappings.
 - [`src/config/db.py`](file:///c:/Users/bello/Desktop/PROJET_PFE/src/config/db.py): MySQL connection parameters, pool sizing (`DB_POOL_SIZE`, `DB_MAX_OVERFLOW`), and table name definitions.
-- [`src/config/models.py`](file:///c:/Users/bello/Desktop/PROJET_PFE/src/config/models.py): Hugging Face repo IDs, local model directory paths, and the numeric `MODEL_ID_MAP` (IDs 0–11).
+- [`src/config/db_config.py`](file:///c:/Users/bello/Desktop/PROJET_PFE/src/config/db_config.py): Implements [`DatabaseConnection`](file:///c:/Users/bello/Desktop/PROJET_PFE/src/config/db_config.py) with SQLAlchemy engine pooling (`QueuePool`), table creation, atomic upserts, and entity deduplication.
+- [`src/config/models.py`](file:///c:/Users/bello/Desktop/PROJET_PFE/src/config/models.py): Hugging Face repo IDs, local model directory paths, and the numeric `MODEL_ID_MAP` (IDs 0–14).
+- [`src/config/ner_labels.py`](file:///c:/Users/bello/Desktop/PROJET_PFE/src/config/ner_labels.py): Unified 8-class taxonomy mapping dictionaries and per-model label registries (`MODEL_LABEL_MAPS`).
 - [`src/config/pipeline.py`](file:///c:/Users/bello/Desktop/PROJET_PFE/src/config/pipeline.py): Pipeline execution controls (`RUN_NER`, `RUN_SENTIMENT`, `RUN_TOPIC`, `RUN_QWEN`, `SAMPLE_SIZE`, `LANG_THRESHOLD`, `EXPORT_ANALYTICS_CSV`).
 - [`src/config/hyperparameters.py`](file:///c:/Users/bello/Desktop/PROJET_PFE/src/config/hyperparameters.py): Chunk limits (e.g., 512 tokens), overlap sizes, NER confidence thresholds, and unified entity types.
 - [`src/config/heuristics.py`](file:///c:/Users/bello/Desktop/PROJET_PFE/src/config/heuristics.py): Sentiment post-rule keywords (question markers, negative override cues) and the 18-class multilingual topic taxonomy.
@@ -269,38 +284,26 @@ Centralizes all settings into structured sub-modules aggregated into a single un
 - [`src/preprocessing/arabic.py`](file:///c:/Users/bello/Desktop/PROJET_PFE/src/preprocessing/arabic.py): Implements [`ArabicPreprocessor`](file:///c:/Users/bello/Desktop/PROJET_PFE/src/preprocessing/arabic.py) for Arabic normalization (Unicode decomposition, diacritics/tashkeel stripping, tatweel removal, alef normalization, Franco-Arabic cleaning, noise stripping).
 - [`src/preprocessing/latin.py`](file:///c:/Users/bello/Desktop/PROJET_PFE/src/preprocessing/latin.py): Implements [`LatinPreprocessor`](file:///c:/Users/bello/Desktop/PROJET_PFE/src/preprocessing/latin.py) for English and French text (NFKC normalization, accent preservation/stripping, smart quotes, hashtag/URL/mention removal, case folding).
 
+##### `src/ner/` — Named Entity Recognition Package
+- [`src/ner/extractor.py`](file:///c:/Users/bello/Desktop/PROJET_PFE/src/ner/extractor.py): Implements [`GLiNERNER`](file:///c:/Users/bello/Desktop/PROJET_PFE/src/ner/extractor.py) (zero-shot multilingual token extraction) and [`TransformersNER`](file:///c:/Users/bello/Desktop/PROJET_PFE/src/ner/extractor.py) with unified 8-class taxonomy mapping, adjacent entity merging, and deduplication.
+- [`src/ner/__init__.py`](file:///c:/Users/bello/Desktop/PROJET_PFE/src/ner/__init__.py): Exposes `TransformersNER`, `GLiNERNER`, `NEREntity`, `ModelLoadError`.
+
+##### `src/sentiment/` — Sentiment Analysis Package
+- [`src/sentiment/extractor.py`](file:///c:/Users/bello/Desktop/PROJET_PFE/src/sentiment/extractor.py): Implements [`LLMSentiment`](file:///c:/Users/bello/Desktop/PROJET_PFE/src/sentiment/extractor.py) managing fine-tuned BERT models per language with sliding-window chunk inference, majority vote aggregation, and heuristic rule overrides.
+- [`src/sentiment/__init__.py`](file:///c:/Users/bello/Desktop/PROJET_PFE/src/sentiment/__init__.py): Exposes `LLMSentiment`, `SentimentResult`, `map_label`.
+
+##### `src/topic/` — Topic Classification Package
+- [`src/topic/extractor.py`](file:///c:/Users/bello/Desktop/PROJET_PFE/src/topic/extractor.py): Implements [`TransformerTopic`](file:///c:/Users/bello/Desktop/PROJET_PFE/src/topic/extractor.py) (fine-tuned 18-class transformer classifiers) and [`LLMTopic`](file:///c:/Users/bello/Desktop/PROJET_PFE/src/topic/extractor.py) (zero-shot NLI fallback) with chunk scoring and tie-breaking.
+- [`src/topic/__init__.py`](file:///c:/Users/bello/Desktop/PROJET_PFE/src/topic/__init__.py): Exposes `TransformerTopic`, `LLMTopic`, `TopicResult`, `get_topic_labels`.
+
 ##### `src/qwen/` — Comparative LLM Evaluation Pass
 - [`src/qwen/run_qwen_pass.py`](file:///c:/Users/bello/Desktop/PROJET_PFE/src/qwen/run_qwen_pass.py) (**Stage 3 — Qwen Pass**): Iterates over sampled articles and invokes Qwen 2.5 via Ollama REST API.
 - [`src/qwen/sentiment_extraction.py`](file:///c:/Users/bello/Desktop/PROJET_PFE/src/qwen/sentiment_extraction.py): Constructs language-specific prompts and parses structured JSON responses for 3-class sentiment (`POSITIVE`, `NEGATIVE`, `NEUTRAL`).
 - [`src/qwen/topic_extraction.py`](file:///c:/Users/bello/Desktop/PROJET_PFE/src/qwen/topic_extraction.py): Prompts Qwen for zero-shot topic classification and maps returned categories to the 18 standardized topics.
 
-##### Core Standalone Source Files
-- [`src/db_config.py`](file:///c:/Users/bello/Desktop/PROJET_PFE/src/db_config.py):
-  - Implements [`DatabaseConnection`](file:///c:/Users/bello/Desktop/PROJET_PFE/src/db_config.py) with SQLAlchemy engine pooling (`QueuePool`).
-  - Contains database schema migration & table initialization ([`init_result_tables`](file:///c:/Users/bello/Desktop/PROJET_PFE/src/db_config.py)).
-  - Provides atomic upsert operations for sentiment, topic, and Qwen tables.
-  - Implements entity deduplication via exact matching and bounded fuzzy similarity (`SequenceMatcher`), plus global entity frequency re-indexing.
-- [`src/language_detection.py`](file:///c:/Users/bello/Desktop/PROJET_PFE/src/language_detection.py):
-  - Implements [`FastTextLanguageDetector`](file:///c:/Users/bello/Desktop/PROJET_PFE/src/language_detection.py) using `fast-langdetect` / fastText `lid.176.bin`.
-  - Aggregates Arabic dialect probabilities (`ar`, `arz`, `ary`, `arq`, etc.) and performs Arabic-script character ratio checks.
-  - Exposes [`ArticleClassifier`](file:///c:/Users/bello/Desktop/PROJET_PFE/src/language_detection.py) for batch DataFrame language categorization.
-- [`src/ner_extraction.py`](file:///c:/Users/bello/Desktop/PROJET_PFE/src/ner_extraction.py):
-  - Implements [`GLiNERNER`](file:///c:/Users/bello/Desktop/PROJET_PFE/src/ner_extraction.py) (zero-shot multilingual token extraction) and [`TransformersNER`](file:///c:/Users/bello/Desktop/PROJET_PFE/src/ner_extraction.py).
-  - Handles token chunking with character offset tracking, maps raw labels into 8 unified categories (`PER`, `ORG`, `LOC`, `DAT`, `EVE`, `PRO`, `COM`, `MIS`), expands entity word boundaries, and merges adjacent same-type entities with linker words (`of`, `de`, `و`).
-- [`src/sentiment_extraction.py`](file:///c:/Users/bello/Desktop/PROJET_PFE/src/sentiment_extraction.py):
-  - Implements [`LLMSentiment`](file:///c:/Users/bello/Desktop/PROJET_PFE/src/sentiment_extraction.py) managing fine-tuned BERT models per language.
-  - Executes sliding-window chunk inference with majority voting aggregation.
-  - Converts model-specific outputs (5-star ratings for CamemBERT, 3-class logits for RoBERTa and Arabic BERT) into unified `POSITIVE`/`NEGATIVE`/`NEUTRAL` labels.
-  - Applies post-inference heuristics (question neutralizer, negative domain cue overrides).
-- [`src/topic_extraction.py`](file:///c:/Users/bello/Desktop/PROJET_PFE/src/topic_extraction.py):
-  - Implements [`TransformerTopic`](file:///c:/Users/bello/Desktop/PROJET_PFE/src/topic_extraction.py) (fine-tuned 18-class transformer classifiers) and [`LLMTopic`](file:///c:/Users/bello/Desktop/PROJET_PFE/src/topic_extraction.py) (zero-shot NLI fallback).
-  - Implements chunk-level scoring and vote aggregation with tie-breaking.
-  - Maps numerical class indices to standardized multilingual category names.
-- [`src/chunking.py`](file:///c:/Users/bello/Desktop/PROJET_PFE/src/chunking.py):
-  - Implements [`token_chunks()`](file:///c:/Users/bello/Desktop/PROJET_PFE/src/chunking.py), splitting long texts into overlapping token windows using Hugging Face tokenizer offset mappings.
-- [`src/text_utils.py`](file:///c:/Users/bello/Desktop/PROJET_PFE/src/text_utils.py):
-  - Implements [`init_console_encoding()`](file:///c:/Users/bello/Desktop/PROJET_PFE/src/text_utils.py) for UTF-8 standard streams on Windows.
-  - Implements [`format_arabic_for_console()`](file:///c:/Users/bello/Desktop/PROJET_PFE/src/text_utils.py) using `arabic_reshaper` and `python-bidi` for proper RTL rendering in terminals.
+##### `src/language_detection/` — Language Detection Package
+- [`src/language_detection/detector.py`](file:///c:/Users/bello/Desktop/PROJET_PFE/src/language_detection/detector.py): Implements [`FastTextLanguageDetector`](file:///c:/Users/bello/Desktop/PROJET_PFE/src/language_detection/detector.py) using `fast-langdetect` / fastText `lid.176.bin` with Arabic dialect aggregation and script ratio checks. Exposes [`LanguageDetection`](file:///c:/Users/bello/Desktop/PROJET_PFE/src/language_detection/detector.py).
+- [`src/language_detection/__init__.py`](file:///c:/Users/bello/Desktop/PROJET_PFE/src/language_detection/__init__.py): Exposes `FastTextLanguageDetector`, `LanguageDetection`, `ARABIC_LANG_CODES`.
 
 ---
 
@@ -343,11 +346,11 @@ Contains analytical SQL aggregation scripts and report generators executed autom
 | [`pipeline/sampler.py`](file:///c:/Users/bello/Desktop/PROJET_PFE/pipeline/sampler.py) | Stage 1 | MySQL `article` table | `work_df`, `skipped_df`, DB locks | Batch sampling, fastText language detection, task text cleaning |
 | [`src/preprocessing/router.py`](file:///c:/Users/bello/Desktop/PROJET_PFE/src/preprocessing/router.py) | Stage 1 | Raw article strings | Cleaned `text_ner`, `text_sentiment`, `text_topic` | Language- and task-aware text normalization |
 | [`pipeline/gpu_pass.py`](file:///c:/Users/bello/Desktop/PROJET_PFE/pipeline/gpu_pass.py) | Stage 2 | `work_df` | `article_entities`, `article_sentiments`, `article_topics`, `benchmark_results` | Sequential GPU batch inference with VRAM management |
-| [`src/ner_extraction.py`](file:///c:/Users/bello/Desktop/PROJET_PFE/src/ner_extraction.py) | Stage 2 | `text_ner` | `List[NEREntity]` | Zero-shot GLiNER extraction, label unification, deduplication |
-| [`src/sentiment_extraction.py`](file:///c:/Users/bello/Desktop/PROJET_PFE/src/sentiment_extraction.py) | Stage 2 | `text_sentiment` | `SentimentResult` | Chunked BERT inference, majority vote, heuristic overrides |
-| [`src/topic_extraction.py`](file:///c:/Users/bello/Desktop/PROJET_PFE/src/topic_extraction.py) | Stage 2 | `text_topic` | `TopicResult` | 18-class transformer topic classification and voting |
+| [`src/ner/extractor.py`](file:///c:/Users/bello/Desktop/PROJET_PFE/src/ner/extractor.py) | Stage 2 | `text_ner` | `List[NEREntity]` | Zero-shot GLiNER & BERT extraction, label unification, deduplication |
+| [`src/sentiment/extractor.py`](file:///c:/Users/bello/Desktop/PROJET_PFE/src/sentiment/extractor.py) | Stage 2 | `text_sentiment` | `SentimentResult` | Chunked BERT inference, majority vote, heuristic overrides |
+| [`src/topic/extractor.py`](file:///c:/Users/bello/Desktop/PROJET_PFE/src/topic/extractor.py) | Stage 2 | `text_topic` | `TopicResult` | 18-class transformer topic classification and voting |
 | [`src/qwen/run_qwen_pass.py`](file:///c:/Users/bello/Desktop/PROJET_PFE/src/qwen/run_qwen_pass.py) | Stage 3 | `work_df` | `qwen_article_sentiments`, `qwen_article_topics`, `qwen_benchmark_results` | Comparative Ollama LLM inference pass |
-| [`src/db_config.py`](file:///c:/Users/bello/Desktop/PROJET_PFE/src/db_config.py) | All | DataFrames / Predictions | MySQL Schema & Persistence | Connection pooling, atomic upserts, entity deduplication |
+| [`src/config/db_config.py`](file:///c:/Users/bello/Desktop/PROJET_PFE/src/config/db_config.py) | All | DataFrames / Predictions | MySQL Schema & Persistence | Connection pooling, atomic upserts, entity deduplication |
 | [`analysis/report_generator.py`](file:///c:/Users/bello/Desktop/PROJET_PFE/analysis/report_generator.py) | Stage 4 | Enriched MySQL tables | 4 Analytics DB tables & `analytics_summary.csv` | Automated SQL analytical aggregation & time-series report creation |
 
 ---
@@ -484,7 +487,7 @@ All values can be overridden via environment variables (loaded from `.env.local`
 
 ---
 
-### Language Detection (`src/language_detection.py`)
+### Language Detection (`src/language_detection/`)
 
 **Class:** `FastTextLanguageDetector`
 
@@ -492,8 +495,6 @@ All values can be overridden via environment variables (loaded from `.env.local`
 - Top-5 predictions retrieved and Arabic dialect probabilities aggregated to avoid split-confidence issues.
 - Arabic character-ratio heuristic prevents misclassification of colloquial Arabic as Persian/Urdu.
 - Returns a `LanguageDetection(lang, score, raw_label)` dataclass.
-
-**Class:** `ArticleClassifier` — higher-level wrapper used in batch classification scripts.
 
 ---
 
@@ -507,7 +508,7 @@ A `PreprocessRouter` dispatches text to language-specific and task-specific prep
 
 ---
 
-### NER Extraction (`src/ner_extraction.py`)
+### NER Extraction (`src/ner/`)
 
 Two NER implementations sharing the same interface:
 
@@ -530,7 +531,7 @@ Key processing steps in `TransformersNER`:
 
 ---
 
-### Sentiment Extraction (`src/sentiment_extraction.py`)
+### Sentiment Extraction (`src/sentiment/`)
 
 **Class:** `LLMSentiment`
 
@@ -546,7 +547,7 @@ Key processing steps in `TransformersNER`:
 
 ---
 
-### Topic Extraction (`src/topic_extraction.py`)
+### Topic Extraction (`src/topic/`)
 
 Two topic classifiers:
 
@@ -573,7 +574,7 @@ Communicates with Ollama REST API. Supports all three languages with language-sp
 
 ---
 
-### Database Layer (`src/db_config.py`)
+### Database Layer (`src/config/db_config.py`)
 
 **Class:** `DatabaseConnection`
 

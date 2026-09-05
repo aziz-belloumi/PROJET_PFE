@@ -1,4 +1,4 @@
-# src/chunking.py
+# src/config/chunking.py
 """
 Shared token-based chunking utility used by NER, Sentiment, and Topic model classes.
 Splits a text into overlapping chunks that respect a tokenizer's max token length.

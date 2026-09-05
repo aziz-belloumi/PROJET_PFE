@@ -1,4 +1,4 @@
-# src/ner_extraction.py
+# src/ner/extractor.py
 
 from __future__ import annotations
 from dataclasses import dataclass
@@ -26,148 +26,26 @@ class ModelLoadError(Exception):
     pass
 
 from src.config import Config
-from src.chunking import token_chunks
+from src.config.chunking import token_chunks
 
 
 DEFAULT_NER_PARAMS: Dict[str, Any] = Config.DEFAULT_NER_PARAMS
 
-# Unified label mapping:
-LABEL_UNIFICATION = {
-    # --------------------
-    # PERSON
-    # --------------------
-    "PERSON": "PER",
-    "PER": "PER",
-    "PERS": "PER",
-    "HUMAN": "PER",
-    "INDIVIDUAL": "PER",
-    "PER.": "PER",
-    "PERS.": "PER",
-    "PERSONS": "PER",
-    "PEOPLE": "PER",
-    "B-PER": "PER",
-    "I-PER": "PER",
-    "B-PERS": "PER",
-    "I-PERS": "PER",
-    "B-PERSON": "PER",
-    "I-PERSON": "PER",
-    "B-PERSONS": "PER",
-    "I-PERSONS": "PER",
+# ---------------------------------------------------------------------------
+# Label mapping constants — defined in src/config/ner_labels.py, accessed via Config
+# ---------------------------------------------------------------------------
+LABEL_UNIFICATION      = Config.LABEL_UNIFICATION       # generic cross-model table
+_MODEL_LABEL_MAPS      = Config.MODEL_LABEL_MAPS         # ordered per-model registry
+_SLOW_TOKENIZER_MODELS = Config.USE_SLOW_TOKENIZER_MODELS
 
-    # Some NER models use PERSON as PERSON (already handled), or PER (handled)
 
-    # --------------------
-    # ORGANIZATION
-    # --------------------
-    "ORGANIZATION": "ORG",
-    "ORGANISATION": "ORG",
-    "ORG": "ORG",
-    "COMPANY": "ORG",
-    "INSTITUTION": "ORG",
-    "AGENCY": "ORG",
-    "UNIVERSITY": "ORG",
-    "MINISTRY": "ORG",
-    "GOV": "ORG",
-    "GOVERNMENT": "ORG",
-    "B-ORG": "ORG",
-    "I-ORG": "ORG",
-    "B-ORGANIZATION": "ORG",
-    "I-ORGANIZATION": "ORG",
-    "B-ORGANISATION": "ORG",
-    "I-ORGANISATION": "ORG",
-
-    # --------------------
-    # LOCATION
-    # --------------------
-    "LOCATION": "LOC",
-    "LOC": "LOC",
-    "GPE": "LOC",
-    "CITY": "LOC",
-    "COUNTRY": "LOC",
-    "REGION": "LOC",
-    "STATE": "LOC",
-    "PROVINCE": "LOC",
-    "B-LOC": "LOC",
-    "I-LOC": "LOC",
-    "B-LOCATION": "LOC",
-    "I-LOCATION": "LOC",
-    "B-GPE": "LOC",
-    "I-GPE": "LOC",
-
-    # Facilities often treated as location in your setup
-    "FAC": "LOC",
-    "FACILITY": "LOC",
-    "B-FAC": "LOC",
-    "I-FAC": "LOC",
-    "B-FACILITY": "LOC",
-    "I-FACILITY": "LOC",
-
-    # --------------------
-    # DATE / TIME
-    # --------------------
-    "DATE": "DAT",
-    "DAT": "DAT",
-    "TIME": "DAT",
-    "TIM": "DAT",
-    "DATETIME": "DAT",
-    "B-DATE": "DAT",
-    "I-DATE": "DAT",
-    "B-TIME": "DAT",
-    "I-TIME": "DAT",
-    "B-DATETIME": "DAT",
-    "I-DATETIME": "DAT",
-
-    # --------------------
-    # EVENT
-    # --------------------
-    "EVENT": "EVE",
-    "EVE": "EVE",
-    "B-EVENT": "EVE",
-    "I-EVENT": "EVE",
-
-    # --------------------
-    # MISC (catch-all)
-    # --------------------
-    "MISC": "MIS",
-    "MIS": "MIS",
-    "MISCELLANEOUS": "MIS",
-    "OTHER": "MIS",
-    "OTH": "MIS",
-    "B-MISC": "MIS",
-    "I-MISC": "MIS",
-
-    # --------------------
-    # PRODUCT (AraBERT sometimes has it)
-    # --------------------
-    "PRODUCT": "PRO",
-    "PRO": "PRO",
-    "B-PRODUCT": "PRO",
-    "I-PRODUCT": "PRO",
-    "BRAND": "PRO",
-    "APP": "PRO",
-    "SOFTWARE": "PRO",
-    "PLATFORM": "PRO",
-
-    # --------------------
-    # COMPETITION / SPORT LEAGUE (AraBERT sometimes has it)
-    # --------------------
-    "COMPETITION": "COM",
-    "COM": "COM",
-    "LEAGUE": "COM",
-    "TOURNAMENT": "COM",
-    "CHAMPIONSHIP": "COM",
-    "B-COMPETITION": "COM",
-    "I-COMPETITION": "COM",
-
-    # GLiNER labels mapping
-    "PERSON NAME": "PER",
-    "ORGANIZATION OR INSTITUTION OR GOVERNMENT BODY": "ORG",
-    "GEOGRAPHIC LOCATION OR CITY OR COUNTRY": "LOC",
-    "DATE OR TIME EXPRESSION": "DAT",
-    "NAMED EVENT OR ARMED CONFLICT OR POLITICAL CRISIS": "EVE",
-    "COMMERCIAL PRODUCT OR BRAND NAME": "PRO",
-    "SPORTS COMPETITION OR LEAGUE OR TOURNAMENT": "COM",
-}
+def _get_model_label_map(model_name: str) -> Optional[Dict[str, Optional[str]]]:
+    """Return the per-model label map, or None to fall back to LABEL_UNIFICATION."""
+    name_lower = model_name.lower()
+    for key, label_map in _MODEL_LABEL_MAPS:
+        if key in name_lower:
+            return label_map
+    return None
 
 
 @dataclass
@@ -221,8 +99,14 @@ class TransformersNER:
             device = 0 if torch.cuda.is_available() else -1
         self.device = device
 
+        # Per-model label map (overrides generic LABEL_UNIFICATION when not None)
+        self._model_label_map: Optional[Dict[str, Optional[str]]] = _get_model_label_map(model_name)
+
+        # CamemBERT (SentencePiece) requires the slow tokenizer
+        use_fast = not any(k in model_name.lower() for k in _SLOW_TOKENIZER_MODELS)
+
         try:
-            self.tokenizer = AutoTokenizer.from_pretrained(model_name, use_fast=True)
+            self.tokenizer = AutoTokenizer.from_pretrained(model_name, use_fast=use_fast)
             self.model = AutoModelForTokenClassification.from_pretrained(model_name)
         except Exception as e:
             self.logger.error(f"Failed to load model '{model_name}': {e}")
@@ -252,8 +136,16 @@ class TransformersNER:
         )
 
     @staticmethod # Normalizes labels to PER, ORG, LOC, DAT, EVE, MIS, PRO, COM
-    def _normalize_label(label: str) -> str:
+    def _normalize_label(label: str, model_label_map: Optional[Dict[str, Optional[str]]] = None) -> str:
         raw = (label or "UNK").upper().strip()
+
+        # 1. Try the per-model map first (highest priority)
+        if model_label_map is not None:
+            if raw in model_label_map:
+                result = model_label_map[raw]
+                return result if result is not None else "UNK"
+
+        # 2. Fall through to the generic unification table
         if raw in LABEL_UNIFICATION:
             return LABEL_UNIFICATION[raw]
         if raw.startswith("B-") or raw.startswith("I-"):
@@ -355,18 +247,18 @@ class TransformersNER:
                 continue
 
             gap = base_text[last.end:ent.start] if 0 <= last.end <= ent.start <= len(base_text) else ""
-            
+
             is_mergeable = self._gap_is_mergeable(gap)
             if not is_mergeable:
                 clean_gap = gap.strip().lower()
                 multilingual_linkers = {
-                    "of", "and", "the", 
+                    "of", "and", "the",
                     "de", "du", "des", "et", "le", "la", "les", "en", "aux",
                     "و", "من", "في", "بن", "ابن"
                 }
                 if clean_gap in multilingual_linkers:
                     is_mergeable = True
-            
+
             if not is_mergeable:
                 merged.append(ent)
                 continue
@@ -416,7 +308,14 @@ class TransformersNER:
 
             for p in preds:
                 label = p.get("entity_group", p.get("entity", "UNK"))
-                label_norm = self._normalize_label(label)
+                label_norm = self._normalize_label(label, self._model_label_map)
+
+                # Skip non-entity tokens (mapped to None in per-model map)
+                if label_norm == "UNK" and self._model_label_map is not None:
+                    raw = (label or "").upper().strip()
+                    if self._model_label_map.get(raw) is None and raw in self._model_label_map:
+                        continue
+
                 score = float(p.get("score", 0.0))
 
                 if score < self.score_threshold:
@@ -533,7 +432,7 @@ class GLiNERNER:
 
             for entity in raw_entities:
                 label_norm = TransformersNER._normalize_label(entity["label"])
-                
+
                 # Filter out entities that are too short or invalid
                 if not TransformersNER._is_valid_entity_text(entity["text"]):
                     continue

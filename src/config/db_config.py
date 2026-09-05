@@ -2,7 +2,7 @@ from difflib import SequenceMatcher
 import logging
 from sqlalchemy import create_engine, text
 from sqlalchemy.pool import QueuePool
-from src.config import Config
+from .db import DatabaseConfig as Config
 
 
 class DatabaseConnection:

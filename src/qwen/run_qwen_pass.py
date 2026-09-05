@@ -4,7 +4,7 @@ import pandas as pd
 from tqdm import tqdm
 
 from src.config import Config
-from src.db_config import DatabaseConnection
+from src.config.db_config import DatabaseConnection
 
 from .sentiment_extraction import LLMSentiment
 from .topic_extraction import LLMTopic

@@ -14,6 +14,9 @@ from .hyperparameters import HyperparametersConfig
 from .heuristics import HeuristicsConfig
 from .preprocessing import PreprocessingConfig
 from .qwen import QwenConfig
+from .ner_labels import NERLabelsConfig
+from .chunking import token_chunks
+from .db_config import DatabaseConnection
 
 
 class Config(
@@ -25,6 +28,7 @@ class Config(
     HeuristicsConfig,
     PreprocessingConfig,
     QwenConfig,
+    NERLabelsConfig,
 ):
     """
     Consolidated configuration class aggregating all sub-modules.
@@ -37,12 +41,15 @@ __all__ = [
     "Config",
     "BaseConfig",
     "DatabaseConfig",
+    "DatabaseConnection",
     "ModelsConfig",
     "PipelineConfig",
     "HyperparametersConfig",
     "HeuristicsConfig",
     "PreprocessingConfig",
     "QwenConfig",
+    "NERLabelsConfig",
     "PROJECT_ROOT",
     "getenv",
+    "token_chunks",
 ]

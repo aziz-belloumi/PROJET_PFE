@@ -1,3 +1,5 @@
+# src/topic/extractor.py
+
 from __future__ import annotations
 
 import logging
@@ -11,17 +13,10 @@ from transformers import pipeline
 from src.config import Config
 
 
-
-
 @dataclass
 class TopicResult:
     label: str
     score: float
-
-
-
-CATEGORY_DISPLAY = Config.CATEGORY_DISPLAY
-
 
 
 # ---------------------------------------------------------------------------
@@ -84,8 +79,6 @@ class LLMTopic:
         if not chunks:
             chunks = [text]
 
-
-
         self.logger.info(
             f"[LLMTopic] Processing {len(chunks)} chunk(s) "
             f"(text length={len(text)} chars, lang={lang})"
@@ -109,7 +102,7 @@ class LLMTopic:
                 # Truncate chunk text to stay within context length safely (~1500 chars)
                 truncated_chunk = chunk[:1500]
                 res = pipe(truncated_chunk, candidate_labels=labels, hypothesis_template=template)
-                
+
                 best_label = res['labels'][0]
                 best_score = res['scores'][0]
 
@@ -184,17 +177,17 @@ class TransformerTopic:
     def predict(self, text: str, lang: str = None) -> TopicResult:
         """
         Classify the input text into one of the predefined topic categories.
-        
+
         Args:
             text: Input text to classify
             lang: Language code (overrides init lang if provided)
-            
+
         Returns:
             TopicResult with label and confidence score
         """
         if lang:
             self.lang = lang.lower()
-        
+
         if not text or not isinstance(text, str):
             fallback = Config.CATEGORY_DISPLAY[17].get(self.lang, "General")
             return TopicResult(label=fallback, score=0.0)
@@ -229,18 +222,18 @@ class TransformerTopic:
                 # Truncate chunk to stay within model limits
                 truncated_chunk = chunk[:1500]
                 result = self.pipeline(truncated_chunk)
-                
+
                 # result is a list with one dict: [{'label': 'LABEL_X', 'score': float}]
                 if result:
                     pred_label = result[0]['label']
                     pred_score = result[0]['score']
-                    
+
                     # Map LABEL_X to actual label from config
                     actual_label = self._map_label(pred_label)
-                    
+
                     label_scores[actual_label] = label_scores.get(actual_label, 0.0) + pred_score
                     label_counts[actual_label] = label_counts.get(actual_label, 0) + 1
-                    
+
                     self.logger.debug(
                         f"[TransformerTopic] chunk {idx + 1}/{len(chunks)} → "
                         f"label='{actual_label}' (raw={pred_label}) score={pred_score:.3f}"
@@ -280,6 +273,6 @@ class TransformerTopic:
                     return label_dict[idx]
         except Exception as e:
             self.logger.debug(f"[TransformerTopic] Failed to map label {raw_label}: {e}")
-        
+
         # Fallback: return the raw label
         return raw_label

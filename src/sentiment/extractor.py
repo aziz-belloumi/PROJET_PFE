@@ -1,3 +1,5 @@
+# src/sentiment/extractor.py
+
 from __future__ import annotations
 
 import logging
@@ -56,7 +58,6 @@ def _tokenize_words(text: str) -> List[str]:
     if not text:
         return []
     return RE_TOKENS.findall(text.strip())
-
 
 
 def _is_question_like(text: str, lang: str) -> bool:
@@ -249,7 +250,7 @@ class LLMSentiment:
                                    probs={"POSITIVE": 0.0, "NEGATIVE": 0.0, "NEUTRAL": 0.0})
 
         best_label = max(label_counts, key=lambda lbl: (label_counts[lbl], label_scores[lbl]))
-        
+
         # Computes confidence based on total chunks ratio
         mean_score = label_counts[best_label] / valid_chunks_processed
 

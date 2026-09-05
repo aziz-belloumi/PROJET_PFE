@@ -7,7 +7,7 @@ from typing import Optional, Union
 import pandas as pd
 
 from src.config import Config
-from src.db_config import DatabaseConnection
+from src.config.db_config import DatabaseConnection
 
 from analysis.topics_by_month import topics_by_month, dominant_topic_by_month
 from analysis.top_entities_by_country import top_entities_by_country

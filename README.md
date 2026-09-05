@@ -313,21 +313,28 @@ PROJET_PFE/
 │
 ├── pipeline/                   # Sequential workflow stages
 │   ├── __init__.py
-│   ├── sampler.py              # Stage 1: Batch sampling, fastText detection, filtering
-│   ├── gpu_pass.py             # Stage 2: Model-by-model GPU batch inference & DB writes
-│   └── cpu_pass.py             # (Optional) Timing-only CPU benchmark pass
+│   ├── cpu_pass.py             # Stage 1: CPU Pass — Sampling, fastText language detection & text preprocessing
+│   ├── gpu_pass.py             # Stage 2: GPU Pass — Model-by-model GPU batch inference & DB writes
+│   └── sampler.py              # Backward-compatible alias for cpu_pass.py
 │
 ├── src/                        # Core application modules & components
 │   ├── config/                 # Modular configuration package
 │   │   ├── __init__.py         # Aggregated Config class & public exports
 │   │   ├── base.py             # Root resolution, dotenv loading, hardware settings
+│   │   ├── chunking.py         # Sliding-window token & character chunking utility
 │   │   ├── db.py               # Database URIs, pooling parameters, table registry
-│   │   ├── models.py           # Model paths, registries & unified MODEL_ID_MAP
-│   │   ├── pipeline.py         # Pipeline flags, batch limits, quality gates
-│   │   ├── hyperparameters.py  # NER/Sentiment thresholds and GLiNER labels
+│   │   ├── db_config.py        # SQLAlchemy engine, connection pooling, migrations, atomic upserts
 │   │   ├── heuristics.py       # Sentiment domain cues & 18-class topic taxonomy
+│   │   ├── hyperparameters.py  # NER/Sentiment thresholds and GLiNER labels
+│   │   ├── models.py           # Model paths, registries & unified MODEL_ID_MAP
+│   │   ├── ner_labels.py       # NER label mapping constants and registries
+│   │   ├── pipeline.py         # Pipeline flags, batch limits, quality gates
 │   │   ├── preprocessing.py    # Preprocessing presets for Arabic and Latin
 │   │   └── qwen.py             # Ollama LLM endpoint parameters
+│   │
+│   ├── ner/                    # Named Entity Recognition package
+│   │   ├── __init__.py         # TransformersNER, GLiNERNER, NEREntity exports
+│   │   └── extractor.py        # GLiNER & BERT NER inference engines with unified taxonomy
 │   │
 │   ├── preprocessing/          # Text cleaning engines
 │   │   ├── __init__.py
@@ -341,13 +348,17 @@ PROJET_PFE/
 │   │   ├── sentiment_extraction.py # Prompt-engineered LLM sentiment extraction
 │   │   └── topic_extraction.py # Prompt-engineered LLM topic classification
 │   │
-│   ├── chunking.py             # Sliding-window token & character chunking utility
-│   ├── db_config.py            # SQLAlchemy engine, connection pooling, schema migrations, upserts
-│   ├── language_detection.py   # FastTextLanguageDetector & ArticleClassifier
-│   ├── ner_extraction.py       # GLiNERNER & TransformersNER engines with unified labels
-│   ├── sentiment_extraction.py # BERT Sentiment inference with question & domain heuristics
-│   ├── topic_extraction.py     # BERT TransformerTopic & LLMTopic extraction
-│   └── text_utils.py           # UTF-8 and RTL terminal reshaping (arabic_reshaper + python-bidi)
+│   ├── sentiment/              # Sentiment Analysis package
+│   │   ├── __init__.py         # LLMSentiment, SentimentResult, map_label exports
+│   │   └── extractor.py        # BERT Sentiment inference with question & domain heuristics
+│   │
+│   ├── topic/                  # Topic Classification package
+│   │   ├── __init__.py         # TransformerTopic, LLMTopic, TopicResult exports
+│   │   └── extractor.py        # BERT TransformerTopic & LLMTopic extraction
+│   │
+│   └── language_detection/     # FastText language identification package
+│       ├── __init__.py         # Exposes FastTextLanguageDetector, LanguageDetection
+│       └── detector.py         # FastText detector with Arabic dialect aggregation
 │
 ├── analysis/                   # Analytics and automated report generation
 │   ├── report_generator.py     # Master report builder
