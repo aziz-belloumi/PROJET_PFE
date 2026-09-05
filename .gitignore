@@ -1,32 +1,62 @@
-# Virtual environment
+# ==============================================================================
+# Virtual Environments
+# ==============================================================================
 .venv/
 .env/
 env/
+venv/
 
-# IDE
+# ==============================================================================
+# IDE & Editor
+# ==============================================================================
 .idea/
 .vscode/
+*.swp
+*.swo
 
-# Python cache
+# ==============================================================================
+# Python Cache & Compiled Files
+# ==============================================================================
 __pycache__/
 *.pyc
 *.pyo
 *.pyd
+*.pdb
+*.egg-info/
+dist/
+build/
+*.egg
 
-# Environment variables
+# ==============================================================================
+# Environment Variables & Secrets
+# ==============================================================================
 .env
+.env.local
+.env.*.local
 
-# Logs
+# ==============================================================================
+# Logs & Temp Files
+# ==============================================================================
 *.log
+*.tmp
+*.bak
 
-# Windows specific
+# ==============================================================================
+# OS-Specific
+# ==============================================================================
 Thumbs.db
+.DS_Store
+desktop.ini
 
-# Results
+# ==============================================================================
+# Results & Outputs
+# ==============================================================================
 results/*
 !results/.gitkeep
 
-# Data Files
+# ==============================================================================
+# Data Files (large / auto-generated)
+# ==============================================================================
 data_seperation/**/*.json
 data_seperation/processing_stats.txt
 data_seperation/check_dialect/progress_pc*.json
@@ -34,10 +64,15 @@ data_seperation/check_dialect/progress_pc*.json
 # Ignore all CSV files (too large)
 *.csv
 
-# Model weights & finetuned models (large binary files — keep folder structure only)
+# ==============================================================================
+# Model Weights & Fine-tuned Models
+# (Large binary files — track folder structure only via .gitkeep)
+# ==============================================================================
 finetuned_models/**
 !finetuned_models/**/
 !finetuned_models/**/.gitkeep
 
-# Keep directory structure
+# ==============================================================================
+# Keep all .gitkeep sentinels (applied globally)
+# ==============================================================================
 !**/.gitkeep
