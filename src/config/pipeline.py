@@ -3,13 +3,13 @@ from __future__ import annotations
 
 class PipelineConfig:
     # Sampling size (batch limit)
-    SAMPLE_SIZE: int = 1000
+    SAMPLE_SIZE: int = 10
 
     # Pipeline task execution toggles
     RUN_NER: bool = True
     RUN_SENTIMENT: bool = True
     RUN_TOPIC: bool = True
-    RUN_QWEN: bool = False
+    RUN_QWEN: bool = True
 
     # Language confidence threshold
     LANG_THRESHOLD: float = 0.51
