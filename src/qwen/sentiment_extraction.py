@@ -62,9 +62,8 @@ ASSERTIVE_POSITIVE_PATTERNS = [
 
 RE_ASSERTIVE = re.compile("|".join(ASSERTIVE_NEGATIVE_PATTERNS + ASSERTIVE_POSITIVE_PATTERNS), re.IGNORECASE)
 
-AR_STARTERS = {"من", "ما", "ماذا", "هل", "لماذا", "كيف", "أين", "متى", "أي", "كم"}
-EN_STARTERS = {"who", "what", "why", "how", "where", "when", "which", "is", "are", "do", "does", "did", "can", "could", "will", "would"}
-FR_STARTERS = {"qui", "que", "quoi", "pourquoi", "comment", "où", "ou", "quand", "quel", "quelle", "quels", "quelles", "est-ce", "peut", "doit"}
+# Question starters — imported from Config (single source of truth)
+_QUESTION_STARTERS = Config.QUESTION_STARTERS
 
 # ---------------------------------------------------------------------------
 # Helper functions
@@ -159,10 +158,10 @@ def _is_question_like(text: str, lang: str) -> bool:
         return False
     first_word = words[0].lower()
     if lang == "ar":
-        return first_word in AR_STARTERS
+        return first_word in _QUESTION_STARTERS["ar"]
     if lang == "fr":
-        return first_word in FR_STARTERS
-    return first_word in EN_STARTERS
+        return first_word in _QUESTION_STARTERS["fr"]
+    return first_word in _QUESTION_STARTERS["en"]
 
 
 def _is_ambiguous_short_question(text: str, lang: str) -> bool:

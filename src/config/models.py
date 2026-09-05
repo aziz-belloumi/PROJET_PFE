@@ -5,7 +5,6 @@ NLP model paths, registry mappings, and unique model IDs.
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Dict, List, Tuple
 from .base import BaseConfig
 
