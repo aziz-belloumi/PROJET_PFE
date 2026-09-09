@@ -152,9 +152,10 @@ def run_gpu_pass(
                     continue
 
                 rows = list(lang_subset.itertuples(index=False))
-                pbar = tqdm(rows, desc=f"[NER] {lang.upper()} | {name.split('/')[-1]}", unit="art", leave=False)
+                pbar = tqdm(rows, desc=f"[NER] {lang.upper()} | {name.split('/')[-1]}", unit="art", leave=True)
                 for r in pbar:
                     aid = int(r.id)
+                    pbar.set_postfix({"id": aid})
 
                     cuda_ok = _reset_peak(gpu_device, logger, "NER")
                     t0 = time.perf_counter()
@@ -202,10 +203,11 @@ def run_gpu_pass(
         sent = LLMSentiment(logger=logger, preprocessor=None, device=gpu_device)
 
         rows = list(work_df.itertuples(index=False))
-        pbar = tqdm(rows, desc="[SENTIMENT]", unit="art", leave=False)
+        pbar = tqdm(rows, desc="[SENTIMENT]", unit="art", leave=True)
         for r in pbar:
             aid  = int(r.id)
             lang = str(r.lang)
+            pbar.set_postfix({"id": aid, "lang": lang})
 
             cuda_ok = _reset_peak(gpu_device, logger, "SENT")
 
@@ -261,10 +263,11 @@ def run_gpu_pass(
             extractors_by_lang[lang][mv] = {"extractor": extractor, "type": extractor_type.lower()}
 
         rows = list(work_df.itertuples(index=False))
-        pbar = tqdm(rows, desc="[TOPIC]", unit="art", leave=False)
+        pbar = tqdm(rows, desc="[TOPIC]", unit="art", leave=True)
         for r in pbar:
             aid        = int(r.id)
             lang       = str(r.lang)
+            pbar.set_postfix({"id": aid, "lang": lang})
             text_topic = getattr(r, "text_topic", None)
 
             # Fallback for invalid / too-short text

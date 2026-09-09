@@ -177,18 +177,17 @@ Defined in `src/config/models.py` as the single source of truth across all bench
 
 | Model ID | Key / Identifier | Task & Target Language |
 | :---: | :--- | :--- |
-| `0` | `hatmimoha/arabic-ner` | Arabic NER (AraBERT) |
-| `1` | `CAMeL-Lab/bert-base-arabic-camelbert-msa-ner` | Arabic NER (CAMeL) |
-| `2` | `dslim/bert-base-NER` | English NER (BERT) |
-| `3` | `Jean-Baptiste/camembert-ner` | French NER (CamemBERT) |
-| `4` | `urchade/gliner_multi-v2.1` | Multilingual NER (GLiNER) |
-| `5` | `ar_sentiment_ft` | Arabic Sentiment (Fine-tuned BERT) |
-| `6` | `en_sentiment_ft` | English Sentiment (Fine-tuned BERT) |
-| `7` | `fr_sentiment_ft` | French Sentiment (Fine-tuned BERT) |
-| `8` | `ar_topic_ft` | Arabic Topic (Fine-tuned BERT) |
-| `9` | `en_topic_ft` | English Topic (Fine-tuned BERT) |
-| `10` | `fr_topic_ft` | French Topic (Fine-tuned BERT) |
-| `11` | `qwen2.5:7b` | Qwen LLM (Ollama HTTP Inference) |
+| `0` | `MostafaAhmed98/AraBert-Arabic-NER-CoNLLpp` | Arabic NER (AraBERT) |
+| `1` | `dslim/bert-base-NER` | English NER (BERT) |
+| `2` | `Jean-Baptiste/camembert-ner` | French NER (CamemBERT) |
+| `3` | `urchade/gliner_multi-v2.1` | Multilingual NER (GLiNER) |
+| `4` | `ar_sentiment_ft` | Arabic Sentiment (Fine-tuned BERT) |
+| `5` | `en_sentiment_ft` | English Sentiment (Fine-tuned BERT) |
+| `6` | `fr_sentiment_ft` | French Sentiment (Fine-tuned BERT) |
+| `7` | `ar_topic_ft` | Arabic Topic (Fine-tuned BERT) |
+| `8` | `en_topic_ft` | English Topic (Fine-tuned BERT) |
+| `9` | `fr_topic_ft` | French Topic (Fine-tuned BERT) |
+| `10` | `qwen2.5:7b` | Qwen LLM (Ollama HTTP Inference) |
 
 ---
 
@@ -309,7 +308,8 @@ PROJET_PFE/
 │   ├── FRENSH SENTIMENT/       # French 3-class sentiment classifier
 │   ├── ARABIC TOPIC/           # Arabic 18-class topic classifier
 │   ├── ENGLSIH TOPIC/          # English 18-class topic classifier
-│   └── FRENSH TOPIC/           # French 18-class topic classifier
+│   ├── FRENSH TOPIC/           # French 18-class topic classifier
+│   └── lang_detect_cache/      # Cached FastText lid.176.bin (auto-downloaded once)
 │
 ├── pipeline/                   # Sequential workflow stages
 │   ├── __init__.py
@@ -387,11 +387,11 @@ Configuration is managed via `src/config/`, allowing direct access to all system
 
 | Config Parameter | Default | Description |
 | :--- | :---: | :--- |
-| `Config.SAMPLE_SIZE` | `1000` | Number of unprocessed articles to process per batch |
+| `Config.SAMPLE_SIZE` | `100` | Number of unprocessed articles to process per batch |
 | `Config.RUN_NER` | `True` | Enable/disable Named Entity Recognition |
 | `Config.RUN_SENTIMENT` | `True` | Enable/disable Sentiment Analysis |
 | `Config.RUN_TOPIC` | `True` | Enable/disable Topic Classification |
-| `Config.RUN_QWEN` | `False` | Enable/disable parallel Qwen 2.5 LLM pass |
+| `Config.RUN_QWEN` | `True` | Enable/disable parallel Qwen 2.5 LLM pass |
 | `Config.LANG_THRESHOLD` | `0.51` | Minimum FastText confidence threshold |
 | `Config.EXPORT_ANALYTICS_CSV` | `True` | Optionally export consolidated `analytics_summary.csv` |
 

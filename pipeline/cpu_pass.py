@@ -24,6 +24,7 @@ from src.config import Config
 from src.config.db_config import DatabaseConnection
 from src.language_detection import FastTextLanguageDetector
 from src.preprocessing import PreprocessRouter
+from tqdm import tqdm
 
 
 def run_cpu_pass(
@@ -88,9 +89,17 @@ def run_cpu_pass(
     )
 
     lang_rows = []
-    for r in df.itertuples(index=False):
+    pbar_lang = tqdm(
+        df.itertuples(index=False),
+        total=len(df),
+        desc="[CPU] Language Detection",
+        unit="art",
+        leave=True,
+    )
+    for r in pbar_lang:
         res = detector.detect(r.text_langdetect)
         lang_rows.append({"article_id": int(r.id), "lang": res.lang, "score": res.score})
+        pbar_lang.set_postfix({"id": int(r.id), "lang": res.lang})
 
     lang_df = pd.DataFrame(lang_rows)
     merged = df.merge(lang_df[["article_id", "lang", "score"]], left_on="id", right_on="article_id", how="left")
@@ -141,15 +150,25 @@ def run_cpu_pass(
     # ------------------------------------------------------------------
     # 5) Task-specific text preprocessing
     # ------------------------------------------------------------------
-    work_df["text_ner"] = work_df.apply(
-        lambda r: preproc.preprocess(r.text_raw, str(r.lang), "ner"), axis=1
+    text_ner = []
+    text_sentiment = []
+    text_topic = []
+    pbar_prep = tqdm(
+        work_df.itertuples(index=False),
+        total=len(work_df),
+        desc="[CPU] Text Preprocessing",
+        unit="art",
+        leave=True,
     )
-    work_df["text_sentiment"] = work_df.apply(
-        lambda r: preproc.preprocess(r.text_raw, str(r.lang), "sentiment"), axis=1
-    )
-    work_df["text_topic"] = work_df.apply(
-        lambda r: preproc.preprocess(r.text_raw, str(r.lang), "topic"), axis=1
-    )
+    for r in pbar_prep:
+        text_ner.append(preproc.preprocess(r.text_raw, str(r.lang), "ner"))
+        text_sentiment.append(preproc.preprocess(r.text_raw, str(r.lang), "sentiment"))
+        text_topic.append(preproc.preprocess(r.text_raw, str(r.lang), "topic"))
+        pbar_prep.set_postfix({"id": int(r.id), "lang": str(r.lang)})
+
+    work_df["text_ner"] = text_ner
+    work_df["text_sentiment"] = text_sentiment
+    work_df["text_topic"] = text_topic
 
     # Filter articles that become empty after preprocessing
     empty_mask = (

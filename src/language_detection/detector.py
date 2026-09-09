@@ -52,10 +52,14 @@ class FastTextLanguageDetector:
         self.logger = logger or logging.getLogger(__name__)
         self.preprocessor = preprocessor
 
-        # Configure fast_langdetect — disable truncation so we control input length
+        # Configure fast_langdetect — pin cache so lid.176.bin is downloaded only once
+        _cache_dir = str(
+            __import__("pathlib").Path(__file__).resolve().parent.parent.parent / "finetuned_models" / "lang_detect_cache"
+        )
         config = LangDetectConfig(
             max_input_length=None,
             model=model,
+            cache_dir=_cache_dir,
         )
         self._detector = LangDetector(config)
         self._model = model

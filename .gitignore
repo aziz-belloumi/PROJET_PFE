@@ -72,6 +72,10 @@ finetuned_models/**
 !finetuned_models/**/
 !finetuned_models/**/.gitkeep
 
+# Language detection model cache (lid.176.bin — 125 MB, downloaded automatically)
+finetuned_models/lang_detect_cache/*
+!finetuned_models/lang_detect_cache/.gitkeep
+
 # ==============================================================================
 # Keep all .gitkeep sentinels (applied globally)
 # ==============================================================================

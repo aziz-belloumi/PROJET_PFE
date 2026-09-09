@@ -112,7 +112,7 @@ class NERLabelsConfig:
     # Value of None means "non-entity token – skip this prediction entirely."
     # =========================================================================
 
-    # aubmindlab/bert-base-arabertv02-ner
+    # MostafaAhmed98/AraBert-Arabic-NER-CoNLLpp
     # Emits: B/I-PER  B/I-ORG  B/I-LOC  B/I-MISC  O
     ARABERT_LABEL_MAP: Dict[str, Optional[str]] = {
         "B-PER":  "PER", "I-PER":  "PER",
@@ -163,7 +163,7 @@ class NERLabelsConfig:
 
 # Build MODEL_LABEL_MAPS after the class body so we can reference the maps by name.
 NERLabelsConfig.MODEL_LABEL_MAPS = [
-    ("arabertv02-ner",  NERLabelsConfig.ARABERT_LABEL_MAP),
+    ("arabert",         NERLabelsConfig.ARABERT_LABEL_MAP),
     ("bert-base-ner",   NERLabelsConfig.BERT_EN_LABEL_MAP),
     ("camembert-ner",   NERLabelsConfig.CAMEMBERT_LABEL_MAP),
 ]

@@ -17,6 +17,15 @@ warnings.filterwarnings("ignore")
 os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
 os.environ.setdefault("TRANSFORMERS_VERBOSITY", "error")
 os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "3")
+os.environ.setdefault("SAFETENSORS_FAST_GPU", "1")
+os.environ.setdefault("HF_HUB_DISABLE_PROGRESS_BARS", "1")
+
+import transformers
+transformers.logging.set_verbosity_error()
+transformers.utils.logging.disable_progress_bar()
+
+import huggingface_hub.utils
+huggingface_hub.utils.disable_progress_bars()
 
 from src.config import Config
 from src.config.db_config import DatabaseConnection
@@ -36,8 +45,15 @@ def main():
         format="%(asctime)s - %(levelname)s - %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
     )
+    # Suppress noisy third-party loggers — only tqdm progress bars remain visible
+    for _lib in (
+        "httpx", "httpcore", "huggingface_hub", "transformers",
+        "fast_langdetect", "fasttext", "filelock", "urllib3",
+        "requests", "gliner"
+    ):
+        logging.getLogger(_lib).setLevel(logging.ERROR)
     logger = logging.getLogger("nlp_pipeline")
-    logger.setLevel(logging.INFO)
+    logger.setLevel(logging.WARNING)
 
     sample_size = Config.SAMPLE_SIZE
     raw_table = Config.RAW_TABLE

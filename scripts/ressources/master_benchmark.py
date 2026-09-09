@@ -175,7 +175,7 @@ def main():
         ("sentiment", Config.FINETUNED_SENTIMENT_MODELS["ar"], ["ar"]),
         ("sentiment", Config.FINETUNED_SENTIMENT_MODELS["en"], ["en"]),
         ("sentiment", Config.FINETUNED_SENTIMENT_MODELS["fr"], ["fr"]),
-        ("ner", "hatmimoha/arabic-ner", ["ar"]),
+        ("ner", Config.ARABERT_NER_MODEL, ["ar"]),
         ("ner", "dslim/bert-base-NER", ["en"]),
         ("ner", "Jean-Baptiste/camembert-ner", ["fr"]),
         ("ner", Config.GLINER_MODEL, ["ar", "en", "fr"]),

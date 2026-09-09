@@ -28,33 +28,30 @@ class ModelsConfig:
     QWEN_BENCHMARK_MODEL = "qwen2.5:7b"
 
     # ── NER model hub identifiers ──────────────────────────────────────────────
-    ARABERT_NER_MODEL  = "aubmindlab/bert-base-arabertv02-ner"
+    ARABERT_NER_MODEL  = "MostafaAhmed98/AraBert-Arabic-NER-CoNLLpp"
     BERT_EN_NER_MODEL  = "dslim/bert-base-NER"
     CAMEMBERT_NER_MODEL = "Jean-Baptiste/camembert-ner"
 
     # Single source of truth: Unique numeric model IDs across all tables
     MODEL_ID_MAP: Dict[str, int] = {
-        # NER Models (0-7)
-        "hatmimoha/arabic-ner": 0,               # legacy / kept for backward compat
-        "CAMeL-Lab/bert-base-arabic-camelbert-msa-ner": 1,  # legacy
-        "dslim/bert-base-NER": 2,
-        "Jean-Baptiste/camembert-ner": 3,
-        "urchade/gliner_multi-v2.1": 4,
-        "aubmindlab/bert-base-arabertv02-ner": 5,
-        # IDs 6-7 reserved for future NER models
+        # NER Models (0-3)
+        "MostafaAhmed98/AraBert-Arabic-NER-CoNLLpp": 0,
+        "dslim/bert-base-NER": 1,
+        "Jean-Baptiste/camembert-ner": 2,
+        "urchade/gliner_multi-v2.1": 3,
 
-        # Sentiment Models (8-10)
-        "ar_sentiment_ft": 8,
-        "en_sentiment_ft": 9,
-        "fr_sentiment_ft": 10,
+        # Sentiment Models (4-6)
+        "ar_sentiment_ft": 4,
+        "en_sentiment_ft": 5,
+        "fr_sentiment_ft": 6,
 
-        # Topic Models (11-13)
-        "ar_topic_ft": 11,
-        "en_topic_ft": 12,
-        "fr_topic_ft": 13,
+        # Topic Models (7-9)
+        "ar_topic_ft": 7,
+        "en_topic_ft": 8,
+        "fr_topic_ft": 9,
 
-        # Qwen / LLM Model (14)
-        "qwen2.5:7b": 14,
+        # Qwen / LLM Model (10)
+        "qwen2.5:7b": 10,
     }
 
     # Task key mappings for benchmark recording
@@ -71,12 +68,11 @@ class ModelsConfig:
     }
 
     # Active model registry configurations for the pipeline.
-    # Each language runs its dedicated BERT-based NER model first, then GLiNER
-    # as a multilingual second pass (catches entity types the BERT model may miss).
+    # Arabic uses dedicated AraBERT-NER (MostafaAhmed98/AraBert-Arabic-NER-CoNLLpp).
+    # English and French run their dedicated BERT model first, then GLiNER as a second pass.
     NER_MODELS_BY_LANG: Dict[str, List[Tuple[int, str]]] = {
         "ar": [
-            (MODEL_ID_MAP[ARABERT_NER_MODEL],  ARABERT_NER_MODEL),   # AraBERT-NER (ar)
-            (MODEL_ID_MAP[GLINER_MODEL],        GLINER_MODEL),        # GLiNER multilingual
+            (MODEL_ID_MAP[ARABERT_NER_MODEL],  ARABERT_NER_MODEL),   # AraBERT-NER (ar) — MostafaAhmed98/AraBert-Arabic-NER-CoNLLpp
         ],
         "en": [
             (MODEL_ID_MAP[BERT_EN_NER_MODEL],  BERT_EN_NER_MODEL),   # BERT-base-NER (en)
