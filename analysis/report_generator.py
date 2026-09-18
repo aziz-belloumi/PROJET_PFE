@@ -13,6 +13,10 @@ from analysis.topics_by_month import topics_by_month, dominant_topic_by_month
 from analysis.top_entities_by_country import top_entities_by_country
 from analysis.entities_by_month import entities_by_month
 from analysis.topic_peaks import topic_peaks
+from analysis.model_comparison import (
+    compute_model_comparison,
+    save_model_comparison_reports,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +27,7 @@ def build_analytics_summary(
     peaks_df: Optional[pd.DataFrame] = None,
     entities_month_df: Optional[pd.DataFrame] = None,
     top_entities_df: Optional[pd.DataFrame] = None,
+    model_comp_df: Optional[pd.DataFrame] = None,
     top_n_per_category: int = 5,
 ) -> pd.DataFrame:
     """
@@ -32,6 +37,7 @@ def build_analytics_summary(
       3. Significant Topic Peaks & Surges (Z >= 2.5)
       4. Top Mentioned Entities by Month (Top-N per month)
       5. Top Entities by Country (Top-N per country)
+      6. Model Comparison: Specialized BERT vs Qwen 2.5-7B (Agreement & Cohen's Kappa)
     """
     records = []
 
@@ -205,6 +211,30 @@ def build_analytics_summary(
                 "details": f"Rank #{rank} in {country} ({distinct_cnt} articles, {mentions} mentions, conf: {conf:.3f})",
             })
 
+    # -------------------------------------------------------------
+    # 6. Model Comparison: BERT vs Qwen 2.5-7B
+    # -------------------------------------------------------------
+    if model_comp_df is not None and not model_comp_df.empty:
+        for _, row in model_comp_df.iterrows():
+            task = str(row.get("task", "")).upper()
+            lang = str(row.get("language", "ALL")).upper()
+            n_samples = int(row.get("total_samples", 0)) if pd.notna(row.get("total_samples")) else 0
+            agreements = int(row.get("agreement_count", 0)) if pd.notna(row.get("agreement_count")) else 0
+            acc = float(row.get("accuracy", 0.0)) if pd.notna(row.get("accuracy")) else 0.0
+            kappa = float(row.get("cohen_kappa", 0.0)) if pd.notna(row.get("cohen_kappa")) else 0.0
+            records.append({
+                "section": "MODEL_COMPARISON",
+                "period_or_scope": lang,
+                "category": f"AGREEMENT_{task}",
+                "item_name": f"{task.capitalize()} Agreement (BERT vs Qwen)",
+                "metric_count": n_samples,
+                "metric_share_or_score": round(kappa, 4),
+                "details": (
+                    f"Scope: {lang} | Accuracy: {acc:.1%} ({agreements}/{n_samples}) | "
+                    f"Cohen's Kappa: {kappa:.3f}"
+                ),
+            })
+
     cols = [
         "section",
         "period_or_scope",
@@ -240,6 +270,8 @@ def generate_analytics_reports(
 
     CSV Output (optional, when export_summary_csv=True):
       - analytics_summary.csv
+      - model_comparison_metrics.csv (if Qwen comparison data exists)
+      - model_comparison_confusion.csv (if Qwen comparison data exists)
     """
     run_dir = Path(run_dir)
     if export_summary_csv:
@@ -299,7 +331,21 @@ def generate_analytics_reports(
             db.save_analytics_dataframe(top_entities_df, "analytics_top_entities_by_country")
             logger.info(f"Updated DB table: analytics_top_entities_by_country | rows={len(top_entities_df)}")
 
-        # 6) Optional Consolidated Summary CSV
+        # 6) Model Comparison: Fine-tuned BERT vs. Qwen 2.5-7B (Optional / Benchmarking)
+        model_metrics_df = pd.DataFrame()
+        model_confusion_df = pd.DataFrame()
+        try:
+            model_metrics_df, model_confusion_df = compute_model_comparison(engine=engine)
+            if not model_metrics_df.empty:
+                save_model_comparison_reports(
+                    metrics_df=model_metrics_df,
+                    confusion_df=model_confusion_df,
+                    run_dir=run_dir,
+                )
+        except Exception as e:
+            logger.warning(f"Model comparison evaluation skipped or encountered an issue: {e}")
+
+        # 7) Optional Consolidated Summary CSV
         if export_summary_csv:
             summary_df = build_analytics_summary(
                 topics_month_df=topics_month_df,
@@ -307,6 +353,7 @@ def generate_analytics_reports(
                 peaks_df=peaks_df,
                 entities_month_df=entities_month_df,
                 top_entities_df=top_entities_df,
+                model_comp_df=model_metrics_df,
                 top_n_per_category=5,
             )
             if not summary_df.empty:

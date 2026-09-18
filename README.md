@@ -663,7 +663,7 @@ All analytics tables are persisted directly to dedicated MySQL database tables:
 - `analytics_entities_by_month`: Most frequently mentioned entities per month.
 - `analytics_top_entities_by_country`: Geographic entity frequency breakdown.
 
-When `export_summary_csv=True` (controlled by `EXPORT_ANALYTICS_CSV=true` in `.env.local`), a single consolidated summary CSV (`analytics_summary.csv`) is exported into `analysis/reports/`.
+When `export_summary_csv=True` (controlled by `EXPORT_ANALYTICS_CSV=true` in `.env.local`), a single consolidated summary CSV (`analytics_summary.csv`) is exported into `analysis/reports/`. Furthermore, when the optional Qwen LLM pass is enabled, automated **Model Comparison** evaluates agreement (Cohen's Kappa, raw accuracy, and confusion matrices) between specialized BERT models and Qwen 2.5-7B, exporting `model_comparison_metrics.csv` and `model_comparison_confusion.csv`.
 
 ---
 
