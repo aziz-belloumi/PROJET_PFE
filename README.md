@@ -5,9 +5,9 @@
 [![HuggingFace](https://img.shields.io/badge/HuggingFace-Transformers-yellow.svg)](https://huggingface.co/)
 [![CUDA Enabled](https://img.shields.io/badge/CUDA-Supported-green.svg)](https://developer.nvidia.com/cuda-zone)
 
-A modular, production-grade deep learning fine-tuning framework for **Sentiment Analysis** and **18-Category Topic Classification** across **Arabic**, **English**, and **French** news corpora.
+A modular, production-grade deep learning fine-tuning framework for **Sentiment Analysis** (3 classes) and **Topic Classification** (18 categories) across **Arabic**, **English**, and **French** news corpora.
 
-This repository consumes the human-annotated dataset (`data/global_data_libelised.csv`, 1.48M+ articles) exported from **`Data_Exploring`**, fine-tunes domain-specific transformer architectures with focal loss, class weighting, sliding-window tokenisation, auto-resume mechanisms, and cross-lingual translation pipelines, then produces comprehensive evaluation artifacts and learning curves.
+This repository consumes the human-annotated dataset (`data/global_data_libelised.csv`, 1.48M+ articles) exported from **`Data_Exploring`**, fine-tunes domain-specific transformer architectures with focal loss, dynamic class weighting, sliding-window tokenisation, auto-resume mechanisms, and cross-lingual translation pipelines, then produces comprehensive evaluation artifacts and learning curves.
 
 ---
 
@@ -34,11 +34,11 @@ This repository consumes the human-annotated dataset (`data/global_data_libelise
 
 ## 📊 Dataset Specifications & Taxonomy
 
-The entire fine-tuning pipeline relies on a single consolidated, human-annotated dataset:
+The fine-tuning pipelines consume a consolidated, human-annotated dataset:
 
 | Field | Path | Columns | Description |
 | :--- | :--- | :--- | :--- |
-| **Master Dataset** | `data/global_data_libelised.csv` | `id`, `text`, `language`, `sentiment`, `topic` | Clean preprocessed and human-annotated news corpus across Modern Standard Arabic (`ar`), Dialectal Arabic (`da`), English (`en`), and French (`fr`). |
+| **Master Dataset** | `data/global_data_libelised.csv` | `id`, `text`, `language`, `sentiment`, `topic` | Clean preprocessed and human-annotated news corpus (1,484,846 rows) across Modern Standard Arabic (`ar`), Dialectal Arabic (`da`), English (`en`), and French (`fr`). |
 
 ### 1. Sentiment Classes (3)
 | Class ID | Label | Interpretation |
@@ -85,19 +85,19 @@ Window      +Focal TextAug    +Label   +Augment    Pipeline
         │              │                  │
         └──────────────┴──────────────────┘
                        │
-                       ▼  experiments/<task>/<timestamp>/
+                       ▼  Experiment Outputs & Artifacts
 ┌────────────────────────────────────────────────────────────────────────────────┐
-│  ├── checkpoints/    (Periodic training checkpoints)                           │
-│  ├── best_model/     (Safetensors, tokenizer, config)                          │
-│  ├── eval_results.json  (Macro F1, accuracy, per-group scores)                 │
+│  ├── checkpoints/       (Step or epoch checkpoints)                            │
+│  ├── best_model/        (Safetensors, tokenizer, config)                       │
+│  ├── eval_results.json  (Macro F1, accuracy, per-split scores)                 │
 │  ├── hyperparameters.json                                                      │
-│  └── plots/          (Train/eval loss curves, confusion matrices, ROC curves)  │
+│  └── plots/             (Train/eval loss curves, confusion matrices, ROC)      │
 └──────────────────────────────────────┬─────────────────────────────────────────┘
                                        │
                                        ▼ reports/report_search.py
 ┌────────────────────────────────────────────────────────────────────────────────┐
 │                      Automated Experiment Leaderboard                          │
-│       Auto-scans all runs & ranks checkpoints by Macro F1 / Accuracy           │
+│       Auto-scans runs in experiments/ & ranks models by Macro F1 / Accuracy    │
 └────────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -108,40 +108,39 @@ Window      +Focal TextAug    +Label   +Augment    Pipeline
 ```
 Fine_Tuning/
 ├── README.md                              # Master project documentation
-├── fine_tune_strategy.txt                 # In-depth rationale for every design choice
+├── fine_tune_strategy.txt                 # Architectural decisions & methodology rationale
 ├── requirements.txt                       # Python dependencies
-├── .gitignore                             # Git rules (excluding large CSVs & weights)
+├── .gitignore                             # Git exclusion rules
 │
 ├── data/
-│   └── global_data_libelised.csv              # Master human-annotated dataset (from Data_Exploring)
+│   └── global_data_libelised.csv          # Master human-annotated dataset (1.48M+ rows)
 │
 ├── training/                              # Fine-tuning pipelines
+│   ├── __init__.py
+│   │
 │   ├── arabic/
 │   │   ├── __init__.py
-│   │   ├── fine_tune_arabic_sentiment.py  # Arabic Sentiment — CAMeL BERT + Sliding Window + Focal Loss
-│   │   └── fine_tune_arabic_topic.py      # Arabic Topic — CAMeL BERT + LLRD + Focal Loss (18 classes)
+│   │   ├── fine_tune_arabic_sentiment.py  # CAMeL BERT + Sliding Window (512/256) + Focal Loss
+│   │   └── fine_tune_arabic_topic.py      # CAMeL BERT + LLRD + Focal Loss (18 classes)
 │   │
 │   ├── english/
 │   │   ├── __init__.py
-│   │   ├── fine_tune_english_sentiment.py # English Sentiment — Twitter-RoBERTa-large + Text Augmentation
-│   │   └── fine_tune_english_topic.py     # English Topic — RoBERTa-Base + Focal Loss + Label Smoothing
+│   │   ├── fine_tune_english_sentiment.py # Twitter-RoBERTa-large + Text Augmentation + Focal Loss
+│   │   └── fine_tune_english_topic.py     # RoBERTa-Base + Focal Loss + Label Smoothing (18 classes)
 │   │
 │   └── french/
 │       ├── __init__.py
-│       ├── fine_tune_french_sentiment.py  # French Sentiment — CamemBERT-large + Focal Loss (target >80%)
-│       └── fine_tune_french_topic.py      # French Topic — CamemBERT-large + Translation Pipeline (18 classes)
+│       ├── fine_tune_french_sentiment.py  # CamemBERT-large + Focal Loss (γ=4.0) + Augmentation
+│       └── fine_tune_french_topic.py      # CamemBERT-large + MarianMT Translation + Focal Loss
 │
-├── reports/                               # Experiment run ranking & reporting
+├── reports/                               # Run scanning & leaderboards
 │   ├── __init__.py
-│   └── report_search.py                   # Automated run scanner & Macro F1 leaderboard
+│   └── report_search.py                   # Automated experiment scanner & Macro F1 leaderboard
 │
 └── experiments/                           # Persistent run outputs, checkpoints & metrics
-    ├── arabic_sentiment/                  # Arabic sentiment training runs
-    ├── arabic_topic/                      # Arabic topic training runs
-    ├── english_sentiment/                 # English sentiment training runs
-    ├── english_topic/                     # English topic training runs
-    ├── french_sentiment/                  # French sentiment training runs
-    └── french_topic/                      # French topic training runs
+    ├── arabic_sentiment/                  # Arabic sentiment runs
+    ├── arabic_topic/                      # Arabic topic runs
+    └── english_topic/                     # English topic runs
 ```
 
 ---
@@ -156,9 +155,9 @@ Fine_Tuning/
 - **Key Techniques**:
   - **Sliding Window** tokenisation (`MAX_LEN=512`, `STRIDE=256`) for long documents
   - **Focal Loss** (`α=0.45`, `γ=2.5`) with dynamic class weights
-  - **POSITIVE class augmentation** with Arabic intensifiers (`جداً`, `حقاً`, …)
-  - **MSA (`ar`) / Dialect (`da`) stratified splits** for balanced evaluation
-  - **Auto-resume** from latest valid checkpoint
+  - **POSITIVE class augmentation** with Arabic intensifiers (`جداً`, `حقاً`, `للغاية`, …)
+  - **MSA (`ar`) / Dialect (`da`) stratified splits** (80% train, 10% validation, 10% test)
+  - **Auto-resume** from latest valid checkpoint in `experiments/arabic_sentiment/`
 - **Hyperparameters**:
   - `MAX_LEN`: 512 | `STRIDE`: 256
   - `BATCH_SIZE`: 4 (Effective: 16 via `GRAD_ACCUM=4`)
@@ -166,7 +165,7 @@ Fine_Tuning/
   - `EPOCHS`: 20 | `WARMUP_RATIO`: 0.2 | `WEIGHT_DECAY`: 0.03
   - `LABEL_SMOOTHING`: 0.15 | `MAX_GRAD_NORM`: 0.5
   - `EARLY_STOPPING`: Patience=20 | Threshold=0.005
-- **Best Achieved**: ~87.7% Accuracy
+- **Output Directory**: `experiments/arabic_sentiment/<timestamp>/`
 
 ---
 
@@ -174,11 +173,17 @@ Fine_Tuning/
 - **Script**: [`training/arabic/fine_tune_arabic_topic.py`](training/arabic/fine_tune_arabic_topic.py)
 - **Base Model**: `CAMeL-Lab/bert-base-arabic-camelbert-mix`
 - **Loss Function**: `FocalLoss(gamma=1.5)` + Dynamic Class Weights
-- **Optimizer**: AdamW with **Layerwise Learning Rate Decay** (`decay=0.95`)
+- **Optimizer**: AdamW with **Layerwise Learning Rate Decay (LLRD)** (`decay=0.95`)
+- **Key Techniques**:
+  - Stratified MSA & Dialect splits with combined evaluation
+  - Step-based evaluation with confusion matrix callbacks
+  - Auto-saving best model based on `eval_f1_macro`
 - **Hyperparameters**:
-  - `MAX_LEN`: 512 | `BATCH_SIZE`: 8
+  - `MAX_LEN`: 512 | `BATCH_SIZE`: 8 (Effective: 8 via `GRAD_ACCUM=1`)
   - `LEARNING_RATE`: 1e-5 | `EPOCHS`: 15
-  - `EARLY_STOPPING`: Patience=10 epochs
+  - `WARMUP_RATIO`: 0.15 | `WEIGHT_DECAY`: 0.01 | `MAX_GRAD_NORM`: 0.3
+  - `EARLY_STOPPING`: Patience=10 | Threshold=0.001
+- **Output Directory**: `experiments/arabic_topic/<timestamp>/`
 
 ---
 
@@ -190,13 +195,14 @@ Fine_Tuning/
   - **TextAugmenter**: synonym replacement, random deletion, random swap (`AUGMENT_PROB=0.3`)
   - **Enhanced Focal Loss** with label smoothing (`ε=0.05`, `γ=2.0`)
   - **Auto-Resume** from latest checkpoint in `sentiment_experiments/`
-  - **OOM guard**: auto-reduces batch size on CUDA out-of-memory errors
-  - **ROC, Precision-Recall, per-class F1, and confidence analysis** plots
+  - **OOM Guard**: auto-reduces batch size on CUDA out-of-memory errors
+  - **Diagnostic plots**: ROC, Precision-Recall, per-class F1, and confidence analysis
 - **Hyperparameters**:
   - `MAX_LEN`: 160 | `BATCH_SIZE`: 8 (Effective: 32 via `GRAD_ACCUM=4`)
   - `LEARNING_RATE`: 5e-6 (Cosine) | `EPOCHS`: 12
   - `WARMUP_RATIO`: 0.1 | `WEIGHT_DECAY`: 0.01
   - `EARLY_STOPPING`: Patience=10 | Threshold=0.001
+- **Output Directory**: `sentiment_experiments/english_sentiment_enhanced/run_<timestamp>/`
 
 ---
 
@@ -204,51 +210,59 @@ Fine_Tuning/
 - **Script**: [`training/english/fine_tune_english_topic.py`](training/english/fine_tune_english_topic.py)
 - **Base Model**: `roberta-base` (Optimized)
 - **Loss Function**: `FocalLoss(alpha=0.25, gamma=2.0)` + Label Smoothing (`0.25`)
+- **Key Techniques**:
+  - Custom `EnhancedTrainer` with mixed precision autocast
+  - Regularized classifier head with dropout (`0.35`)
+  - Comprehensive per-split evaluation (Train, Validation, Test)
+  - Auto-resume functionality from latest checkpoint
 - **Hyperparameters**:
   - `MAX_LEN`: 512 | `BATCH_SIZE`: 8 (Effective: 32 via `GRAD_ACCUM=4`)
-  - `LEARNING_RATE`: 1e-5 | `EPOCHS`: 6
-  - `REGULARIZATION`: Dropout (`0.35`), Weight Decay (`0.08`), Max Grad Norm (`0.3`)
+  - `LEARNING_RATE`: 1e-5 (Cosine) | `EPOCHS`: 6
+  - `WEIGHT_DECAY`: 0.08 | `MAX_GRAD_NORM`: 0.3 | `DROPOUT`: 0.35
+- **Output Directory**: `experiments/english_topic/run_<timestamp>/`
 
 ---
 
 ### 5. French Sentiment Classification
 - **Script**: [`training/french/fine_tune_french_sentiment.py`](training/french/fine_tune_french_sentiment.py)
 - **Base Model**: `camembert/camembert-large` (435M parameters)
-- **Data Strategy**: Combines **real French articles** from the master dataset with **translated data** (from `translated_data/translated_french_data_all.parquet`)
+- **Data Strategy**: Combines human-annotated French articles with cached translated data (`training/french/translated_data/`)
 - **Key Techniques**:
   - **Focal Loss** (`α=0.65`, `γ=4.0`) with strong POSITIVE class focus
   - **POSITIVE class augmentation** with French intensifiers (`très`, `vraiment`, `extrêmement`, …)
   - **Enhanced class weights**: POSITIVE × 2.5, NEUTRAL × 0.7, NEGATIVE × 1.1
   - 80/10/10 train/validation/test split
-  - **Gradient checkpointing DISABLED** for speed on RTX 3050
+  - Target: >80% Accuracy
 - **Hyperparameters**:
   - `MAX_LEN`: 384 | `BATCH_SIZE`: 4 (Effective: 32 via `GRAD_ACCUM=8`)
   - `LEARNING_RATE`: 1e-5 | `EPOCHS`: 15
   - `WARMUP_RATIO`: 0.2 | `WEIGHT_DECAY`: 0.05
   - `EARLY_STOPPING`: Patience=10 | Threshold=0.003
-- **Target**: >80% Accuracy
+- **Output Directory**: `training/french/experiments/french_sentiment_camembert_large_final/`
 
-> **⚠️ Pre-requisite**: Run the translation script first to populate `translated_data/` before launching this pipeline.
+> **📌 Note on Data Cache**: Requires pre-translated parquet files in `training/french/translated_data/`:
+> - `translated_french_data_all.parquet`
+> - `real_french_data.parquet`
 
 ---
 
 ### 6. French Topic Classification (18 Categories)
 - **Script**: [`training/french/fine_tune_french_topic.py`](training/french/fine_tune_french_topic.py)
 - **Base Model**: `camembert/camembert-large`
-- **Translation Pipeline**: Uses `Helsinki-NLP/opus-mt-en-fr` (MarianMT) to automatically translate English articles to French; translated data is cached in `translated_data/french_topic_translated_data.csv`
+- **Translation Pipeline**: Uses `Helsinki-NLP/opus-mt-en-fr` (MarianMT) to translate English articles to French; cached in `translated_data/french_topic_translated_data.csv`
 - **Key Techniques**:
   - **Custom `LargeClassifierFocal` model** with CLS-token pooling + dropout head
   - **Focal Loss with class-specific gammas** (`γ` ranges 2.0–4.0 based on class frequency)
   - **Soft inverse-sqrt class weights** (clipped 0.8–2.0)
   - **Environment class oversampling** (class 13 boosted to ≥500 samples)
   - **Auto-resume** from latest valid checkpoint
-  - **ROC curves + AUC bar charts** per class
 - **Hyperparameters**:
   - `MAX_LEN`: 512 | `BATCH_SIZE`: 4 (Effective: 16 via `GRAD_ACCUM=4`)
   - `LEARNING_RATE`: 5e-6 | `EPOCHS`: 6
   - `WEIGHT_DECAY`: 0.01 | `MAX_GRAD_NORM`: 0.3
   - `EARLY_STOPPING`: Patience=5 | Threshold=0.001
   - `EVAL_STEPS`: 3000 | `SEED`: 42
+- **Output Directory**: `training/french/experiments/topic_french/<timestamp>/`
 
 ---
 
@@ -259,26 +273,26 @@ Fine_Tuning/
 
 2. **Focal Loss for Extreme Imbalance**:
    - Addresses high frequency discrepancy between major news topics (e.g. *Politics*, *General*) and niche topics (e.g. *Weather*, *Environment*, *Migration*).
-   - FL(p_t) = -(1 - p_t)^γ · log(p_t) — downweights easy examples, focuses on hard ones.
-   - Class-specific gammas (2.0–4.0) used in French topic to penalise rare classes more aggressively.
+   - $\text{FL}(p_t) = -\alpha_t (1 - p_t)^\gamma \log(p_t)$ — downweights easy examples and focuses on hard minority classes.
+   - Class-specific gammas ($2.0 \le \gamma \le 4.0$) are used in French topic classification.
 
 3. **Layerwise Learning Rate Decay (LLRD)** _(Arabic Topic)_:
-   - Lower Transformer layers train with smaller LRs (preserving pre-trained morphological features); upper layers adapt rapidly. Decay=0.95 per layer.
+   - Lower Transformer layers train with smaller learning rates (preserving pre-trained representations); upper layers adapt rapidly. Decay factor: `0.95` per layer.
 
-4. **Cross-Lingual Translation Pipeline** _(French Topic)_:
-   - English articles in the dataset are automatically translated to French using MarianMT (`Helsinki-NLP/opus-mt-en-fr`), expanding the French training corpus. Results are cached to avoid re-translation.
+4. **Cross-Lingual Translation Augmentation** _(French Pipelines)_:
+   - English news articles in the dataset are translated to French using MarianMT (`Helsinki-NLP/opus-mt-en-fr`), expanding the French training corpus. Results are cached to disk to avoid redundant translation.
 
 5. **Text Augmentation** _(English Sentiment)_:
-   - Training samples undergo random synonym replacement, word deletion, and word swap at `AUGMENT_PROB=0.3` to improve generalisation and reduce overfitting on majority classes.
+   - Training samples undergo random synonym replacement, word deletion, and word swap (`AUGMENT_PROB=0.3`) to improve generalization.
 
 6. **POSITIVE Class Augmentation** _(Arabic & French Sentiment)_:
-   - The underrepresented POSITIVE class is boosted by appending language-appropriate intensifiers to existing positive samples, creating synthetic training examples.
+   - The underrepresented POSITIVE class is boosted by appending language-appropriate intensifiers to existing positive samples.
 
-7. **Mixed Precision (`fp16` / `bf16`) & Gradient Checkpointing**:
-   - Reduces VRAM consumption by ~50%, enabling larger batch sizes on consumer GPUs (RTX 3050/4060).
+7. **Mixed Precision (`fp16` / `bf16`) & Memory Management**:
+   - Reduces VRAM consumption by ~50%, enabling larger batch sizes on consumer GPUs (e.g., RTX 3050/4060).
 
 8. **Resilient Auto-Resume**:
-   - All scripts scan their experiment directories for the latest valid checkpoint (`trainer_state.json` + `model.safetensors`) and resume seamlessly — protecting progress against crashes or deliberate interruptions.
+   - Training scripts automatically scan their experiment directories for valid checkpoints and resume seamlessly upon restart.
 
 ---
 
@@ -297,66 +311,59 @@ python training/arabic/fine_tune_arabic_sentiment.py
 python training/arabic/fine_tune_arabic_topic.py
 
 # ── English ─────────────────────────────────────────────────────────────────
-# Train English Sentiment model (RoBERTa-large + Text Augmentation)
+# Train English Sentiment model (Twitter-RoBERTa-large + Text Augmentation)
 python training/english/fine_tune_english_sentiment.py
 
 # Train English Topic model (18 categories, Focal Loss + Label Smoothing)
 python training/english/fine_tune_english_topic.py
 
 # ── French ──────────────────────────────────────────────────────────────────
-# NOTE: French sentiment requires pre-translated data in translated_data/
-# Ensure translated_data/translated_french_data_all.parquet exists first.
+# Train French Sentiment model (CamemBERT-large + Focal Loss)
+# Note: Ensure cached parquet files exist in training/french/translated_data/
 python training/french/fine_tune_french_sentiment.py
 
-# French topic auto-translates English articles on first run (cached afterwards)
+# Train French Topic model (CamemBERT-large + Auto-Translation)
+# Auto-translates English articles on first run and caches to translated_data/
 python training/french/fine_tune_french_topic.py
-```
-
-### Offline Inference & Confusion Matrix Evaluation
-
-Evaluate a saved checkpoint against a held-out test split:
-
-```powershell
-python analysis/test_inference.py experiments/arabic_topic/<run_timestamp>/checkpoint-XXXXXX
 ```
 
 ### Experiment Scanning & Leaderboard
 
-Automatically scan all completed runs in `experiments/` and rank by Macro F1:
+The leaderboard utility [`reports/report_search.py`](reports/report_search.py) scans completed runs in `experiments/` and ranks them by Macro F1 or Accuracy:
 
 ```powershell
-# Scan all tasks
+# Scan all tasks in experiments/
 python reports/report_search.py --task all
 
-# Scan per language & task
+# Scan specific task and rank by Macro F1
 python reports/report_search.py --task arabic_sentiment   --metric f1_macro
 python reports/report_search.py --task arabic_topic       --metric f1_macro
-python reports/report_search.py --task english_sentiment  --metric f1_macro
 python reports/report_search.py --task english_topic      --metric f1_macro
-python reports/report_search.py --task french_sentiment   --metric f1_macro
-python reports/report_search.py --task french_topic       --metric f1_macro
+
+# Rank by accuracy
+python reports/report_search.py --task all                --metric accuracy
 ```
 
 ---
 
 ## 📦 Experiment Output Structure
 
-Every run creates a timestamped folder inside `experiments/<task>/<timestamp>/`:
+Standard run outputs contain the following artifacts:
 
 ```
-experiments/<task>/<timestamp>/
-├── best_model/                         # Exported model weights & tokenizer
+<experiment_directory>/
+├── best_model/                         # Saved model weights & tokenizer
 │   ├── model.safetensors
 │   ├── config.json
 │   ├── tokenizer.json
-│   └── label_mapping.json              # id→label mapping (French & English)
-├── checkpoints/                        # Step-based checkpoints (checkpoint-XXXX)
-├── hyperparameters.json                # Immutable run configuration recorded at start
-├── eval_results.json                   # Final evaluation metrics (F1 Macro, accuracy)
-├── test_results.json                   # Test-set results (MSA, Dialect, or combined)
-├── summary.json                        # Comprehensive experiment report
-├── predictions_<split>.csv             # Per-sample predictions & confidence scores
-└── plots/                              # High-resolution visual artifacts
+│   └── label_mapping.json              # Class ID to string label mapping
+├── checkpoints/                        # Periodic training checkpoints (checkpoint-XXXX)
+├── hyperparameters.json                # Immutable run configuration recorded at launch
+├── eval_results.json                   # Final validation / test metrics (F1 Macro, accuracy)
+├── test_results.json                   # Detailed test set metrics
+├── summary.json                        # Comprehensive run summary (if generated)
+├── predictions_<split>.csv             # Per-sample predictions & ground truth
+└── plots/                              # Visual diagnostics
     ├── train_loss.png
     ├── eval_loss.png
     ├── eval_f1_accuracy.png
@@ -364,7 +371,7 @@ experiments/<task>/<timestamp>/
     ├── confusion_matrix_<split>.png
     ├── roc_curves_<split>.png          # French topic & English sentiment
     ├── auc_barchart_<split>.png        # French topic
-    ├── per_class_f1_bar.png            # English sentiment
+    ├── per_class_f1_bar.png            # English sentiment / Arabic topic
     └── confidence_analysis.png         # English sentiment
 ```
 
@@ -395,10 +402,3 @@ experiments/<task>/<timestamp>/
    python -c "import torch; print('CUDA Available:', torch.cuda.is_available(), '| Device:', torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'CPU')"
    ```
 
-5. **Prepare translated data for French Sentiment** _(first-time only)_:
-   ```powershell
-   # The French topic script auto-generates its translation cache on first run.
-   # For French sentiment, ensure the parquet files exist in translated_data/:
-   #   translated_data/translated_french_data_all.parquet
-   #   translated_data/real_french_data.parquet
-   ```
