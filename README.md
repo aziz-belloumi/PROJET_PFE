@@ -6,7 +6,7 @@ A clean, modular two-phase pipeline for building a large-scale, human-annotated 
 2. **Phase 2 — `data_libelisation/`**: Interactive CLI annotator for dual-task human labeling (topic + sentiment) with automatic plot generation on completion.
 3. **Core Package — `src/`**: Shared utilities covering database connection, language detection, Arabic/Latin text preprocessing, and console encoding.
 
-> **Status: ✅ COMPLETE** — All 1,484,845 articles have been fully extracted, preprocessed, and human-annotated (100% libelised).
+> **Status: ✅ COMPLETE** — All 1,484,846 articles have been fully extracted, preprocessed, and human-annotated (100% libelised).
 
 ---
 
@@ -15,7 +15,7 @@ A clean, modular two-phase pipeline for building a large-scale, human-annotated 
 | File | Path | Columns | Records | Description |
 | :--- | :--- | :--- | ---: | :--- |
 | **`global_data.csv`** | `data_exploration/global_data.csv` | `id`, `text`, `language` | 1,484,845 | Clean preprocessed articles (language: `da`, `ar`, `en`, `fr`). |
-| **`global_data_libelised.csv`** | `data_libelisation/global_data_libelised.csv` | `id`, `text`, `language`, `sentiment`, `topic` | 1,484,845 | Fully human-annotated — **3 sentiment classes** × **18 topic categories** with Dialectal (`da`) and MSA (`ar`) distinction. |
+| **`global_data_libelised.csv`** | `data_libelisation/global_data_libelised.csv` | `id`, `text`, `language`, `sentiment`, `topic` | 1,484,846 | Fully human-annotated — **3 sentiment classes** × **18 topic categories** with Dialectal (`da`) and MSA (`ar`) distinction. |
 
 ### Taxonomy
 
@@ -71,7 +71,7 @@ A clean, modular two-phase pipeline for building a large-scale, human-annotated 
                  │                                │
                  ▼                                ▼
   data_exploration/plots/        data_libelisation/global_data_libelised.csv
-  ├── Language Pie                              (1,484,845 fully annotated rows)
+  ├── Language Pie                              (1,484,846 fully annotated rows)
   ├── Language Bar                                        │
   ├── Word Counts                                         ▼
   ├── Rejection Reasons                  data_libelisation/plots/
@@ -92,7 +92,7 @@ Data_Exploring/
 │   ├── data_exploration.ipynb          # EDA notebook — language stats, word counts, quality metrics
 │   ├── fetch_and_preprocess_sql.py     # Parallel MySQL extractor (100k batches, all CPU cores)
 │   ├── global_data.csv                 # Clean dataset  (id, text, language: ar/en/fr)
-│   ├── processing_stats.txt            # Extraction report — acceptance/rejection breakdown
+│   ├── processing_stats.txt            # Extraction report (generated on MySQL extraction run)
 │   └── plots/                          # Auto-generated EDA diagrams
 │       ├── 01_language_distribution_pie.png
 │       ├── 02_language_distribution_bar.png
@@ -138,19 +138,19 @@ Data_Exploring/
 
 ### 1a. Parallel Extraction — `fetch_and_preprocess_sql.py`
 
-Extracts all raw articles from MySQL in **100,000-row parallel batches** across all available CPU cores, applies language detection via `fastText`, and streams valid articles into `global_data.csv`.
+Extracts all raw articles from MySQL in **100,000-row parallel batches** across all available CPU cores, applies language detection via `fastText`, and streams valid articles into `global_data.csv`. The script automatically detects existing records in `global_data.csv` and resumes from that point.
 
 ```bash
-# Extract all articles (default: 100k chunks, all CPU cores)
+# Extract all articles (default: 100k chunks, auto-resumes if global_data.csv exists)
 python data_exploration/fetch_and_preprocess_sql.py
 
-# Resume from a specific row offset
-python data_exploration/fetch_and_preprocess_sql.py --offset 500000
+# Restart extraction from scratch (resets/deletes existing global_data.csv)
+python data_exploration/fetch_and_preprocess_sql.py --fresh
 ```
 
 **Output files:**
 - `data_exploration/global_data.csv` — accepted articles (`ar`, `en`, `fr`)
-- `data_exploration/processing_stats.txt` — acceptance rate, rejection reasons, confidence stats
+- `data_exploration/processing_stats.txt` — generated extraction report (acceptance rate, rejection reasons, confidence stats)
 
 ### 1b. Exploratory Analysis — `data_exploration.ipynb`
 
@@ -247,4 +247,4 @@ pip install arabic-reshaper python-bidi
 | Phase 2 | CLI annotator (topic labeling — 18 categories) | ✅ Done |
 | Phase 2 | CLI annotator (sentiment labeling — 3 classes) | ✅ Done |
 | Phase 2 | Final libellisation plots generation | ✅ Done |
-| **Overall** | **1,484,845 / 1,484,845 articles fully annotated** | **✅ 100%** |
+| **Overall** | **1,484,846 / 1,484,846 articles fully annotated** | **✅ 100%** |
